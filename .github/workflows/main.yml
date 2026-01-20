@@ -1,27 +1,17 @@
 name: Deploy Prisma to Neon
-
 on:
   push:
     branches: [ main ]
-
 jobs:
   migrate:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: inzeli-api
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install deps
         run: npm ci
-
       - name: Prisma migrate deploy
         run: npx prisma migrate deploy
         env:
