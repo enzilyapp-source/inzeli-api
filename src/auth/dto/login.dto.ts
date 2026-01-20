@@ -3,4 +3,4 @@ export class LoginDto {
   @IsEmail() email!: string;
   @IsNotEmpty() password!: string;
 }
-//login.dto.ts
+//auth/dto/login.dto.ts

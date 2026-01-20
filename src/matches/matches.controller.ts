@@ -1,7 +1,9 @@
+// src/matches/matches.controller.ts
 import { Body, Controller, Post, UseGuards, Req } from '@nestjs/common';
 import { MatchesService } from './matches.service';
 import { ok, err } from '../common/api';
 import { AuthGuard } from '@nestjs/passport';
+import { CreateMatchDto } from './dto/create-match.dto';
 
 @Controller('matches')
 export class MatchesController {
@@ -15,28 +17,20 @@ export class MatchesController {
    *   gameId: string,
    *   winners: string[],
    *   losers: string[],
-   *   stakeUnits?: number // 1..3
+   *   sponsorCode?: string
    * }
    */
   @UseGuards(AuthGuard('jwt'))
   @Post()
-  async create(
-    @Req() _req: any,
-    @Body()
-    body: {
-      roomCode?: string;
-      gameId: string;
-      winners: string[];
-      losers: string[];
-      stakeUnits?: number;
-    },
-  ) {
+  async create(@Req() _req: any, @Body() dto: CreateMatchDto) {
     try {
-      const data = await this.matches.createMatch(body);
+      const data = await this.matches.createMatch(dto);
       return ok('Match recorded', data);
     } catch (e: any) {
-      return err(e?.response?.message || e?.message || 'Match failed', e?.message);
+      return err(
+        e?.response?.message || e?.message || 'Match failed',
+        e?.message,
+      );
     }
   }
 }
-// src/matches/matches.controller.ts

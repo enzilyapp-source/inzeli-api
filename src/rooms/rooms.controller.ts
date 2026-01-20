@@ -1,9 +1,15 @@
+// src/rooms/rooms.controller.ts
 import { Body, Controller, Get, Param, Post, UseGuards, Req } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { JoinRoomDto } from './dto/join-room.dto';
 import { ok, err } from '../common/api';
 import { AuthGuard } from '@nestjs/passport';
+
+function getReqUserId(req: any): string {
+  // Supports different jwt.strategy validate() shapes
+  return req?.user?.userId || req?.user?.id || req?.user?.sub || req?.user?.uid;
+}
 
 @Controller('rooms')
 export class RoomsController {
@@ -13,62 +19,103 @@ export class RoomsController {
   @Post()
   async create(@Req() req: any, @Body() dto: CreateRoomDto) {
     try {
-      const hostId = req.user.userId;
-      return ok('Room created 🎮', await this.rooms.createRoom(dto.gameId, hostId));
-    } catch (e: any) { return err(e?.message || 'Create failed', e?.message); }
+      const hostId = getReqUserId(req);
+      if (!hostId) throw new Error('AUTH_USER_ID_MISSING');
+      return ok(
+        'Room created 🎮',
+        await this.rooms.createRoom(dto.gameId, hostId, dto.sponsorCode, dto.lat, dto.lng, dto.radiusMeters),
+      );
+    } catch (e: any) {
+      return err(e?.message || 'Create failed', e?.message);
+    }
   }
 
   @Get(':code')
   async get(@Param('code') code: string) {
     try {
-      const room = await this.rooms.getByCode(code);
-      return ok('Room fetched', room);
-    } catch (e: any) { return err(e?.message || 'Room not found', e?.message || 'ROOM_NOT_FOUND'); }
+      return ok('Room fetched', await this.rooms.getByCode(code));
+    } catch (e: any) {
+      return err(e?.message || 'Room not found', e?.message || 'ROOM_NOT_FOUND');
+    }
   }
 
   @UseGuards(AuthGuard('jwt'))
   @Post('join')
   async join(@Req() req: any, @Body() dto: JoinRoomDto) {
     try {
-      const userId = req.user.userId;
-      return ok('Joined room 👌', await this.rooms.join(dto.code, userId));
-    } catch (e: any) { return err(e?.message || 'Join failed', e?.message); }
+      const userId = getReqUserId(req);
+      if (!userId) throw new Error('AUTH_USER_ID_MISSING');
+      return ok('Joined room 👌', await this.rooms.join(dto.code, userId, dto.lat, dto.lng));
+    } catch (e: any) {
+      return err(e?.message || 'Join failed', e?.message);
+    }
   }
 
   @UseGuards(AuthGuard('jwt'))
   @Post(':code/start')
-  async start(@Req() req: any, @Param('code') code: string, @Body() body: { targetWinPoints?: number; allowZeroCredit?: boolean; timerSec?: number }) {
+  async start(
+    @Req() req: any,
+    @Param('code') code: string,
+    @Body() body: { targetWinPoints?: number; allowZeroCredit?: boolean; timerSec?: number },
+  ) {
     try {
-      const hostId = req.user.userId;
+      const hostId = getReqUserId(req);
+      if (!hostId) throw new Error('AUTH_USER_ID_MISSING');
       return ok('Room started 🚀', await this.rooms.start(code, hostId, body || {}));
-    } catch (e: any) { return err(e?.message || 'Start failed', e?.message); }
+    } catch (e: any) {
+      return err(e?.message || 'Start failed', e?.message);
+    }
   }
 
   @UseGuards(AuthGuard('jwt'))
   @Post(':code/stake')
   async setStake(@Req() req: any, @Param('code') code: string, @Body() body: { amount: number }) {
     try {
-      const userId = req.user.userId;
+      const userId = getReqUserId(req);
+      if (!userId) throw new Error('AUTH_USER_ID_MISSING');
       return ok('Points set 💰', await this.rooms.setStake(code, userId, Number(body.amount ?? 0)));
-    } catch (e: any) { return err(e?.message || 'Set points failed', e?.message); }
+    } catch (e: any) {
+      return err(e?.message || 'Set points failed', e?.message);
+    }
   }
 
-  // NEW — set team for a player
+  // تعيين فريق لاعب (للمضيف فقط)
   @UseGuards(AuthGuard('jwt'))
   @Post(':code/team')
-  async setTeam(@Req() req: any, @Param('code') code: string, @Body() b: { playerUserId: string; team: 'A'|'B' }) {
+  async setTeam(
+    @Req() req: any,
+    @Param('code') code: string,
+    @Body() body: { playerUserId: string; team: 'A' | 'B' },
+  ) {
     try {
-      return ok('Team set', await this.rooms.setPlayerTeam(code, req.user.userId, b.playerUserId, b.team));
-    } catch (e: any) { return err(e?.message || 'Team set failed', e?.message); }
+      const userId = getReqUserId(req);
+      if (!userId) throw new Error('AUTH_USER_ID_MISSING');
+      return ok(
+        'Team set ✅',
+        await this.rooms.setPlayerTeam(code, userId, body.playerUserId, body.team as any),
+      );
+    } catch (e: any) {
+      return err(e?.message || 'Team set failed', e?.message);
+    }
   }
 
-  // NEW — set leader for a team
+  // تعيين قائد فريق (للمضيف فقط)
   @UseGuards(AuthGuard('jwt'))
-  @Post(':code/team-leader')
-  async setLeader(@Req() req: any, @Param('code') code: string, @Body() b: { team: 'A'|'B'; leaderUserId: string }) {
+  @Post(':code/leader')
+  async setLeader(
+    @Req() req: any,
+    @Param('code') code: string,
+    @Body() body: { team: 'A' | 'B'; leaderUserId: string },
+  ) {
     try {
-      return ok('Leader set', await this.rooms.setTeamLeader(code, req.user.userId, b.team, b.leaderUserId));
-    } catch (e: any) { return err(e?.message || 'Leader set failed', e?.message); }
+      const userId = getReqUserId(req);
+      if (!userId) throw new Error('AUTH_USER_ID_MISSING');
+      return ok(
+        'Leader set ✅',
+        await this.rooms.setTeamLeader(code, userId, body.team as any, body.leaderUserId),
+      );
+    } catch (e: any) {
+      return err(e?.message || 'Leader set failed', e?.message);
+    }
   }
 }
-//rooms.controller.ts

@@ -1,0 +1,59 @@
+
+> inzeli-api@1.0.0 start:dev
+> nest start --watch
+
+[2J[3J[H[[90m7:25:45 PM[0m] Starting compilation in watch mode...
+
+[[90m7:25:45 PM[0m] Found 0 errors. Watching for file changes.
+
+(node:96785) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPassportModule dependencies initialized[39m[38;5;3m +7ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +5ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeaderboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mUsersModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRoomsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMatchesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mSponsorsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mStoreModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPingController {/api}:[39m[38;5;3m +5ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ping, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mRoomsController {/api/rooms}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/rooms, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/rooms/:code, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/rooms/join, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/rooms/:code/start, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/rooms/:code/stake, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/rooms/:code/team, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/rooms/:code/leader, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/auth}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/register, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/login, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mMatchesController {/api/matches}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/matches, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mUsersController {/api/users}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id/stats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mSponsorsController {/api/sponsors}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sponsors, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sponsors/:code, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sponsors/:code/join, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sponsors/:code/wallets/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sponsors/wallets/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sponsors/:code/leaderboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sponsors/:code/games, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeaderboardController {/api/leaderboard}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/leaderboard/global, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/leaderboard/sponsor, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mStoreController {/api/store}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/store, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/store/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/store/:id/buy, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:46 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/store/apply, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 96798  - [39m12/18/2025, 7:25:53 PM [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +6945ms[39m
+🚀 API running on http://localhost:3000

@@ -1,6 +1,25 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+// src/rooms/dto/create-room.dto.ts
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNumber } from 'class-validator';
+
 export class CreateRoomDto {
-  @IsString() @IsNotEmpty() gameId!: string;
-  @IsString() @IsNotEmpty() hostId!: string; // if using JWT guard, you can ignore body hostId
+  @IsString()
+  @IsNotEmpty()
+  gameId!: string;
+
+  @IsOptional()
+  @IsString()
+  sponsorCode?: string;
+
+  @IsOptional()
+  @IsNumber()
+  lat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  lng?: number;
+
+  @IsOptional()
+  @IsNumber()
+  radiusMeters?: number;
 }
-//create-room.dto.ts

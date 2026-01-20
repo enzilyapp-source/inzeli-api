@@ -4,4 +4,4 @@ export class RegisterDto {
   @IsNotEmpty() @MinLength(6) password!: string;
   @IsNotEmpty() displayName!: string;
 }
-//register.dto.ts
+//scr/auth/dto/register.dto.ts

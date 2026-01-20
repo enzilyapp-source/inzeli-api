@@ -2,7 +2,7 @@
   "compilerOptions": {
     "module": "commonjs",
     "target": "es2017",
-    "lib": ["es2017", "dom"],
+    "lib": ["es2017"],
     "strict": true,
     "strictNullChecks": true,
     "strictPropertyInitialization": false,
@@ -14,7 +14,11 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "moduleResolution": "node",
-    "resolveJsonModule": true
-  }
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "skipLibCheck": true,
+    "incremental": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
 }
-// tsconfig.json

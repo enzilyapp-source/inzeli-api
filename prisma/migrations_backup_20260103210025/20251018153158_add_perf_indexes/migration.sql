@@ -1,0 +1,1 @@
+-- baseline migration represented in remote DB

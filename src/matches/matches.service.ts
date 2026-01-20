@@ -1,46 +1,36 @@
+// src/matches/matches.service.ts
 import {
   Injectable,
   BadRequestException,
   NotFoundException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { Prisma, Outcome } from '@prisma/client';
+import {
+  incGamePearls,
+  incSponsorPearls,
+  getGamePearls,
+  getSponsorPearls,
+  decGamePearls,
+  decSponsorPearls,
+} from '../common/pearls';
 
 @Injectable()
 export class MatchesService {
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * v1.5:
-   * - stakeUnits N ∈ {1,2,3} (default 1)
-   * - If sponsorCode is provided → adjust ONLY SponsorGameWallet (no global points)
-   * - If sponsorCode is NOT provided → apply v1.4 quorum rule on global permanentScore:
-   *      winners +N ONLY IF their team quorum is met (sum(permanentScore) ≥ team size)
-   *      losers  −N always
-   * - Room timer lock enforced.
-   */
-  async createMatch(input: {
-    roomCode?: string;
-    sponsorCode?: string;
-    gameId: string;
-    winners: string[];
-    losers: string[];
-    stakeUnits?: number;
-  }) {
-    const { roomCode, sponsorCode, gameId } = input;
+  async createMatch(input: { roomCode?: string; gameId: string; winners: string[]; losers: string[] }) {
+    const { roomCode, gameId } = input;
     const winners = input.winners ?? [];
     const losers = input.losers ?? [];
+    const now = Date.now();
 
     if (winners.length === 0 && losers.length === 0) {
       throw new BadRequestException('EMPTY_MATCH');
     }
 
-    // Optional room lock
     let room:
-      | (Prisma.RoomGetPayload<{
-          include: { players: { select: { userId: true; team: true } } };
-        }>)
+      | (Prisma.RoomGetPayload<{ include: { players: { select: { userId: true; team: true } } } }>)
       | null = null;
 
     if (roomCode) {
@@ -49,43 +39,26 @@ export class MatchesService {
         include: { players: { select: { userId: true, team: true } } },
       });
       if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
-      if (room.startedAt && room.timerSec) {
-        const endsAt = new Date(room.startedAt.getTime() + room.timerSec * 1000);
-        if (new Date() < endsAt) {
-          throw new ForbiddenException('RESULTS_LOCKED_UNTIL_TIMER_ENDS');
-        }
+
+      // ✅ enforce server-side timer: must be started and finished
+      if (room.status !== 'running' || !room.startedAt) {
+        throw new BadRequestException('ROOM_NOT_STARTED');
       }
+      // السماح بحسم النتيجة مباشرة (بدون انتظار العداد)
+      // لو احتجنا تفعيل الانتظار لاحقاً، نعيد الشرط التالي:
+      // const endAt = room.timerSec ? room.startedAt.getTime() + room.timerSec * 1000 : null;
+      // if (endAt && now < endAt) throw new BadRequestException('TIMER_NOT_FINISHED');
     }
 
-    // Validate sponsor (if any)
-    if (sponsorCode) {
-      const s = await this.prisma.sponsor.findUnique({ where: { code: sponsorCode } });
-      if (!s || !s.active) throw new NotFoundException('SPONSOR_NOT_FOUND_OR_INACTIVE');
-      const sg = await this.prisma.sponsorGame.findUnique({
-        where: { sponsorCode_gameId: { sponsorCode, gameId } },
-      });
-      if (!sg) throw new BadRequestException('GAME_NOT_SPONSORED');
-    }
+    // ✅ sponsorCode لو موجود في الروم
+    const sponsorCode: string | null = (room as any)?.sponsorCode ?? null;
 
-    // Validate users
-    const ids = Array.from(new Set([...winners, ...losers]));
-    if (ids.length === 0) throw new BadRequestException('NO_PARTICIPANTS');
-
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: ids } },
-      select: { id: true },
-    });
-    if (users.length !== ids.length) throw new BadRequestException('USER_NOT_FOUND');
-
-    // Clamp stakeUnits → 1..3
-    const N = Math.max(1, Math.min(3, Number(input.stakeUnits ?? 1)));
-
-    // Create match row (keep sponsorCode if provided)
+    // إنشاء match
     const match = await this.prisma.match.create({
       data: {
-        roomCode,
+        roomCode: roomCode ?? null,
         gameId,
-        sponsorCode: sponsorCode ?? null,
+        sponsorCode,
         parts: {
           create: [
             ...winners.map((uid) => ({ userId: uid, outcome: 'WIN' as Outcome })),
@@ -96,98 +69,63 @@ export class MatchesService {
       include: { parts: true },
     });
 
-    // Sponsor match: change only sponsor wallets
-    if (sponsorCode) {
-      await this.prisma.$transaction(async (tx) => {
-        // Ensure wallets exist (start at 5)
-        for (const uid of ids) {
-          await tx.sponsorGameWallet.upsert({
-            where: { userId_sponsorCode_gameId: { userId: uid, sponsorCode, gameId } },
-            update: {},
-            create: { userId: uid, sponsorCode, gameId, pearls: 5 },
-          });
-        }
-        if (winners.length) {
-          await tx.sponsorGameWallet.updateMany({
-            where: { sponsorCode, gameId, userId: { in: winners } },
-            data: { pearls: { increment: N } },
-          });
-        }
-        if (losers.length) {
-          await tx.sponsorGameWallet.updateMany({
-            where: { sponsorCode, gameId, userId: { in: losers } },
-            data: { pearls: { decrement: N } },
-          });
-        }
-
-        await tx.timelineEvent.create({
-          data: {
-            kind: 'MATCH_FINISHED',
-            roomCode: roomCode ?? null,
-            gameId,
-            meta: { sponsorCode, winners, losers, stakeUnits: N, mode: 'sponsor_only' },
-          },
-        });
-      });
-
-      return match;
-    }
-
-    // Non-sponsor match: apply v1.4 quorum rule to global points
-    const winnersEligible: string[] = [];
-
-    if (room) {
-      // Build team map
-      const teamByUser = new Map<string, 'A' | 'B' | null>();
-      for (const p of room.players) {
-        teamByUser.set(p.userId, (p.team as 'A' | 'B' | null) ?? null);
-      }
-
-      // Fetch pearls (permanentScore) for all room players
-      const roomUserIds = room.players.map((p) => p.userId);
-      const scores = await this.prisma.user.findMany({
-        where: { id: { in: roomUserIds } },
-        select: { id: true, permanentScore: true },
-      });
-      const scoreMap = new Map(scores.map((u) => [u.id, u.permanentScore]));
-
-      // Sum/count per team
-      const teamSum: Record<'A' | 'B', number> = { A: 0, B: 0 };
-      const teamCount: Record<'A' | 'B', number> = { A: 0, B: 0 };
-      for (const p of room.players) {
-        const t = (p.team as 'A' | 'B' | null) ?? null;
-        if (!t) continue;
-        teamSum[t] += scoreMap.get(p.userId) ?? 0;
-        teamCount[t] += 1;
-      }
-      const quorumMet: Record<'A' | 'B', boolean> = {
-        A: teamCount.A > 0 && teamSum.A >= teamCount.A,
-        B: teamCount.B > 0 && teamSum.B >= teamCount.B,
-      };
-
-      // Eligible winners: no team → allowed, else only if team quorum met
-      for (const uid of winners) {
-        const t = teamByUser.get(uid);
-        if (!t) winnersEligible.push(uid);
-        else if (quorumMet[t]) winnersEligible.push(uid);
-      }
-    } else {
-      // No room context → allow all winners
-      winnersEligible.push(...winners);
-    }
-
+    // تسوية اللؤلؤ والنقاط
     await this.prisma.$transaction(async (tx) => {
-      if (winnersEligible.length) {
+      // permanentScore
+      if (winners.length) {
         await tx.user.updateMany({
-          where: { id: { in: winnersEligible } },
-          data: { permanentScore: { increment: N } },
+          where: { id: { in: winners } },
+          data: { permanentScore: { increment: 1 } },
         });
       }
       if (losers.length) {
         await tx.user.updateMany({
           where: { id: { in: losers } },
-          data: { permanentScore: { decrement: N } },
+          data: { permanentScore: { decrement: 1 } },
         });
+      }
+
+      if (roomCode) {
+        const latestRoom =
+          room ?? (await tx.room.findUnique({ where: { code: roomCode } }));
+
+        const sc: string | null = sponsorCode;
+        const game = latestRoom!.gameId;
+
+        // خصم 1 لؤلؤة من كل خاسر (إذا عنده)، وجمعها
+        let pot = 0;
+        for (const lo of losers) {
+          try {
+            if (sc) {
+              const cur = await getSponsorPearls(tx, lo, sc, game);
+              if (cur > 0) {
+                await decSponsorPearls(tx, lo, sc, game, 1);
+                pot += 1;
+              }
+            } else {
+              const cur = await getGamePearls(tx, lo, game);
+              if (cur > 0) {
+                await decGamePearls(tx, lo, game, 1);
+                pot += 1;
+              }
+            }
+          } catch (_) {
+            // إذا ما عنده رصيد، تجاهل
+          }
+        }
+
+        // وزّع الـ pot على الفائزين بالتساوي (باقي الزيادة لأول فائز)
+        if (pot > 0 && winners.length > 0) {
+          const per = Math.floor(pot / winners.length);
+          const rem = pot % winners.length;
+          for (let i = 0; i < winners.length; i++) {
+            const inc = per + (i === 0 ? rem : 0);
+            if (inc > 0) {
+              if (sc) await incSponsorPearls(tx, winners[i], sc, game, inc);
+              else await incGamePearls(tx, winners[i], game, inc);
+            }
+          }
+        }
       }
 
       await tx.timelineEvent.create({
@@ -197,15 +135,34 @@ export class MatchesService {
           gameId,
           meta: {
             winners,
-            winnersEligible,
             losers,
-            stakeUnits: N,
-            pearlsBasis: 'permanentScore',
-            quorumRule: 'teamSum(permScore) >= teamSize for +N',
-            mode: 'global',
+            pearlsPot: true,
+            refundedWinnerStake: false,
+            distributedLoserStake: true,
           },
         },
       });
+
+      // أغلق الروم بعد حسم المباراة
+      if (roomCode) {
+        await tx.room.update({
+          where: { code: roomCode },
+          data: {
+            status: 'finished',
+            timerSec: null,
+            startedAt: null,
+          },
+        });
+
+        await tx.timelineEvent.create({
+          data: {
+            kind: 'ROOM_FINISHED',
+            roomCode,
+            gameId,
+            meta: { winners, losers },
+          },
+        });
+      }
     });
 
     return match;

@@ -27,4 +27,4 @@ export class AuthController {
     return ok('Profile', await this.auth.getProfile(req.user.userId));
   }
 }
-//auth.controller.ts 
+//auth/auth.controller.ts 

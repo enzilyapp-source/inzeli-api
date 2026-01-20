@@ -1,3 +1,4 @@
+// src/users/users.module.ts
 import { Module } from '@nestjs/common';
 import { UsersController } from './users.controller';
 import { PrismaService } from '../prisma.service';
@@ -7,4 +8,3 @@ import { PrismaService } from '../prisma.service';
   providers: [PrismaService],
 })
 export class UsersModule {}
-// src/users/users.module.ts
