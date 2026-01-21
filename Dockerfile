@@ -28,7 +28,7 @@ ENV NODE_ENV=production
 
 # prod deps only
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install
 
 # prisma runtime bits + app
 COPY prisma ./prisma
