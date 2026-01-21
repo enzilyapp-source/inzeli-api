@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 # don't trigger postinstall yet
 ENV PRISMA_SKIP_POSTINSTALL=1
-RUN npm ci --no-audit --no-fund
+RUN npm install
 
 # ---- build ----
 FROM node:20-alpine AS build
@@ -28,7 +28,7 @@ ENV NODE_ENV=production
 
 # prod deps only
 COPY package*.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
+RUN npm install --omit=dev
 
 # prisma runtime bits + app
 COPY prisma ./prisma
