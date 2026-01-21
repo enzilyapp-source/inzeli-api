@@ -1,43 +1,20 @@
-# ---- deps ----
-FROM node:20-alpine AS deps
+# Simple build for Nest + Prisma on Debian (avoids Alpine native issues)
+FROM node:20-bullseye-slim
+
 WORKDIR /app
+
+# Install deps (include dev deps for build)
 COPY package*.json ./
-# don't trigger postinstall yet
-ENV PRISMA_SKIP_POSTINSTALL=1
-RUN npm install
-
-# ---- build ----
-FROM node:20-alpine AS build
-WORKDIR /app
-ENV PRISMA_SKIP_POSTINSTALL=1
-COPY --from=deps /app/node_modules ./node_modules
-
-# copy prisma BEFORE generating client
 COPY prisma ./prisma
+RUN npm install
 RUN npx prisma generate
 
-# now copy the rest and build Nest
-COPY tsconfig*.json nest-cli.json ./
-COPY src ./src
+# App source
+COPY . .
+
+# Build Nest
 RUN npm run build
 
-# ---- runtime ----
-FROM node:20-alpine AS runtime
-WORKDIR /app
 ENV NODE_ENV=production
-
-# prod deps only
-COPY package*.json ./
-RUN npm install
-
-# prisma runtime bits + app
-COPY prisma ./prisma
-COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=build /app/dist ./dist
-
-# entrypoint
-COPY docker-entrypoint.sh /usr/local/bin/entry.sh
-RUN chmod +x /usr/local/bin/entry.sh
-
 EXPOSE 3000
-CMD ["entry.sh"]
+CMD ["npm", "run", "start:prod"]
