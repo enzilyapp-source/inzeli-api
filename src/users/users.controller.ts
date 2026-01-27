@@ -1,5 +1,5 @@
 // src/users/users.controller.ts
-import { Controller, Get, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards, Req, Delete, HttpCode } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../prisma.service';
 import { ok, err } from '../common/api';
@@ -9,6 +9,42 @@ import { Prisma } from '@prisma/client';
 @Controller('users')
 export class UsersController {
   constructor(private prisma: PrismaService) {}
+
+  @UseGuards(AuthGuard('jwt'))
+  @Delete('me')
+  @HttpCode(200)
+  async deleteMe(@Req() req: any) {
+    const userId = req.user.userId;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Remove any dewanyahs owned by the user to avoid orphaned records
+        await tx.dewanyah.deleteMany({ where: { ownerUserId: userId } });
+
+        // Clean up all relations that might block user deletion
+        await tx.dewanyahRequest.deleteMany({ where: { userId } });
+        await tx.dewanyahMember.deleteMany({ where: { userId } });
+        await tx.roomPlayer.deleteMany({ where: { userId } });
+        await tx.roomStake.deleteMany({ where: { userId } });
+        await tx.room.deleteMany({ where: { hostUserId: userId } });
+        await tx.matchParticipant.deleteMany({ where: { userId } });
+        await tx.timelineEvent.deleteMany({ where: { userId } });
+        await tx.userItem.deleteMany({ where: { userId } });
+        await tx.userSponsor.deleteMany({ where: { userId } });
+        await tx.userGameStat.deleteMany({ where: { userId } });
+        await tx.userGameWallet.deleteMany({ where: { userId } });
+        await tx.sponsorGameWallet.deleteMany({ where: { userId } });
+        await tx.sponsorGameStat.deleteMany({ where: { userId } });
+
+        // Finally, delete the user
+        await tx.user.delete({ where: { id: userId } });
+      });
+
+      return ok('Account deleted', { deleted: true });
+    } catch (e: any) {
+      const msg = e?.message || 'Failed to delete account';
+      return err(msg, 'DELETE_FAILED');
+    }
+  }
 
   @UseGuards(AuthGuard('jwt'))
   @Get('me')
