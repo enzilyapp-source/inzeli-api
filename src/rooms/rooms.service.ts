@@ -16,6 +16,7 @@ import {
   incSponsorPearls,
   decSponsorPearls,
 } from '../common/pearls';
+import { MatchesService } from '../matches/matches.service';
 
 const STAKE = 0; // لا نسحب لؤلؤ عند الإنشاء/الانضمام (يتم الخصم فقط عند الخسارة)
 const DEFAULT_RADIUS_METERS = 100;
@@ -35,7 +36,7 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 
 @Injectable()
 export class RoomsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private matches: MatchesService) {}
 
   // ---------- helpers ----------
   private newCode(): string {
@@ -75,6 +76,17 @@ export class RoomsService {
       return { required, available, quorumMet };
     };
     return { A: calc('A'), B: calc('B') };
+  }
+
+  private async getRoomWithPlayers(code: string) {
+    const room = await this.prisma.room.findUnique({
+      where: { code },
+      include: {
+        players: true,
+      },
+    });
+    if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
+    return room;
   }
 
   // ---------- core ----------
@@ -442,5 +454,127 @@ export class RoomsService {
     });
 
     return this.getByCode(code);
+  }
+
+  // ---------- result + approvals (REST polling) ----------
+  async submitResult(
+    code: string,
+    hostId: string,
+    payload: { winners: string[]; losers: string[] },
+  ) {
+    const room = await this.getRoomWithPlayers(code);
+    if (room.hostUserId !== hostId) throw new ForbiddenException('ONLY_HOST_CAN_SUBMIT');
+    const winners = (payload.winners ?? []).filter(Boolean);
+    const losers = (payload.losers ?? []).filter(Boolean);
+    if (!winners.length) throw new BadRequestException('WINNERS_REQUIRED');
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.roomResultVote.deleteMany({ where: { roomCode: code } });
+      await tx.room.update({
+        where: { code },
+        data: {
+          resultStatus: 'pending',
+          resultPayload: { winners, losers },
+          resultSubmittedBy: hostId,
+          resultUpdatedAt: new Date(),
+        },
+      });
+      // host approves by default
+      await tx.roomResultVote.create({
+        data: { roomCode: code, userId: hostId, approve: true },
+      });
+    });
+
+    return this.getResultState(code);
+  }
+
+  async voteResult(code: string, userId: string, approve: boolean) {
+    const room = await this.prisma.room.findUnique({
+      where: { code },
+      include: { players: true, resultVotes: true },
+    });
+    if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
+    const inRoom = room.players.some((p) => p.userId === userId);
+    if (!inRoom) throw new ForbiddenException('NOT_IN_ROOM');
+    if (room.resultStatus !== $Enums.RoomResultStatus.pending) {
+      throw new BadRequestException('RESULT_NOT_PENDING');
+    }
+
+    if (!approve) {
+      // رفض: نرجع للحالة rejected وعلى الهوست تحديد نتيجة جديدة
+      await this.prisma.$transaction(async (tx) => {
+        await tx.roomResultVote.deleteMany({ where: { roomCode: code } });
+        await tx.room.update({
+          where: { code },
+          data: { resultStatus: 'rejected', resultUpdatedAt: new Date() },
+        });
+      });
+      return this.getResultState(code);
+    }
+
+    await this.prisma.roomResultVote.upsert({
+      where: { roomCode_userId: { roomCode: code, userId } },
+      update: { approve: true, createdAt: new Date() },
+      create: { roomCode: code, userId, approve: true },
+    });
+
+    // إذا وافق الجميع، ننجز النتيجة ونغلق الروم
+    const totalPlayers = room.players.length;
+    const approvals = await this.prisma.roomResultVote.count({
+      where: { roomCode: code, approve: true },
+    });
+    if (approvals >= totalPlayers) {
+      return this.finalizeResult(room);
+    }
+
+    return this.getResultState(code);
+  }
+
+  async getResultState(code: string) {
+    const room = await this.prisma.room.findUnique({
+      where: { code },
+      include: {
+        resultVotes: true,
+        players: true,
+      },
+    });
+    if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
+    return {
+      code,
+      status: room.resultStatus,
+      payload: room.resultPayload,
+      submittedBy: room.resultSubmittedBy,
+      updatedAt: room.resultUpdatedAt,
+      votes: room.resultVotes.map((v) => ({ userId: v.userId, approve: v.approve })),
+      totalPlayers: room.players.length,
+    };
+  }
+
+  private async finalizeResult(room: any) {
+    if (room.resultStatus === $Enums.RoomResultStatus.approved) return this.getResultState(room.code);
+
+    const payload = (room.resultPayload as any) || {};
+    const winners: string[] = Array.isArray(payload.winners) ? payload.winners : [];
+    const losers: string[] = Array.isArray(payload.losers) ? payload.losers : [];
+
+    // أنشئ المباراة لتسوية اللآلئ والنتيجة
+    await this.matches.createMatch({
+      roomCode: room.code,
+      gameId: room.gameId,
+      winners,
+      losers,
+    });
+
+    await this.prisma.room.update({
+      where: { code: room.code },
+      data: {
+        status: 'finished',
+        resultStatus: 'approved',
+        resultUpdatedAt: new Date(),
+        timerSec: null,
+      },
+    });
+
+    return this.getResultState(room.code);
   }
 }

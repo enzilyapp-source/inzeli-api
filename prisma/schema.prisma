@@ -130,6 +130,13 @@ model Room {
   matches       Match[]
   stakes        RoomStake[]
   TimelineEvent TimelineEvent[]
+
+  // نتيجة المباراة + موافقات اللاعبين
+  resultStatus     RoomResultStatus @default(waiting)
+  resultPayload    Json?
+  resultSubmittedBy String?
+  resultUpdatedAt  DateTime?
+  resultVotes      RoomResultVote[]
 }
 
 enum TeamSide {
@@ -161,6 +168,26 @@ model RoomStake {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([roomCode, userId])
+}
+
+model RoomResultVote {
+  roomCode String
+  userId   String
+  approve  Boolean
+  createdAt DateTime @default(now())
+
+  room Room @relation(fields: [roomCode], references: [code], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([roomCode, userId])
+  @@index([userId])
+}
+
+enum RoomResultStatus {
+  waiting
+  pending
+  approved
+  rejected
 }
 
 // ---------- Sponsors ----------

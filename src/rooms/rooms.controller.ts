@@ -67,6 +67,51 @@ export class RoomsController {
     }
   }
 
+  // نتيجة الروم (يقدّمها المضيف)
+  @UseGuards(AuthGuard('jwt'))
+  @Post(':code/result')
+  async submitResult(
+    @Req() req: any,
+    @Param('code') code: string,
+    @Body() body: { winners: string[]; losers: string[] },
+  ) {
+    try {
+      const hostId = getReqUserId(req);
+      if (!hostId) throw new Error('AUTH_USER_ID_MISSING');
+      return ok('Result submitted', await this.rooms.submitResult(code, hostId, body || { winners: [], losers: [] }));
+    } catch (e: any) {
+      return err(e?.message || 'Result submit failed', e?.message);
+    }
+  }
+
+  // تصويت اللاعبين (موافقة/رفض)
+  @UseGuards(AuthGuard('jwt'))
+  @Post(':code/result/vote')
+  async voteResult(
+    @Req() req: any,
+    @Param('code') code: string,
+    @Body() body: { approve: boolean },
+  ) {
+    try {
+      const userId = getReqUserId(req);
+      if (!userId) throw new Error('AUTH_USER_ID_MISSING');
+      return ok('Vote recorded', await this.rooms.voteResult(code, userId, !!body?.approve));
+    } catch (e: any) {
+      return err(e?.message || 'Vote failed', e?.message);
+    }
+  }
+
+  // حالة النتيجة + الأصوات (للاستطلاع)
+  @UseGuards(AuthGuard('jwt'))
+  @Get(':code/state')
+  async state(@Param('code') code: string) {
+    try {
+      return ok('Room state', await this.rooms.getResultState(code));
+    } catch (e: any) {
+      return err(e?.message || 'State failed', e?.message);
+    }
+  }
+
   @UseGuards(AuthGuard('jwt'))
   @Post(':code/stake')
   async setStake(@Req() req: any, @Param('code') code: string, @Body() body: { amount: number }) {
