@@ -50,6 +50,8 @@ model User {
   pearls         Int  @default(5)
   pearlsSeasonYm Int? // ✅ nullable season marker
 
+  birthDate     DateTime?
+
   // اختيارات الثيم/الإطار/الكارت الحالية
   themeId String?
   frameId String?

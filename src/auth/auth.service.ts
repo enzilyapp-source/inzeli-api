@@ -53,6 +53,7 @@ export class AuthService {
         email,
         displayName: dto.displayName.trim(),
         passwordHash,
+        ...(dto.birthDate ? { birthDate: new Date(dto.birthDate) } : {}),
         // pearls default = 5 من schema.prisma
       },
     });
