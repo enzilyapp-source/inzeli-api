@@ -131,6 +131,8 @@ export class RoomsService {
                   pearls: true,
                   creditPoints: true,
                   permanentScore: true,
+                  avatarBase64: true,
+                  avatarPath: true,
                 },
               },
             },
