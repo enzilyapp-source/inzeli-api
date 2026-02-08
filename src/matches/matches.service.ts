@@ -128,6 +128,7 @@ export class MatchesService {
         }
       }
 
+      // سجل حدث عام
       await tx.timelineEvent.create({
         data: {
           kind: 'MATCH_FINISHED',
@@ -142,6 +143,30 @@ export class MatchesService {
           },
         },
       });
+
+      // سجل أحداث فردية لكل فائز/خاسر ليظهر في تايملاينهم
+      if (winners.length) {
+        await tx.timelineEvent.createMany({
+          data: winners.map((u) => ({
+            userId: u,
+            gameId,
+            roomCode: roomCode ?? null,
+            kind: 'MATCH_WIN',
+            meta: { winners, losers },
+          })),
+        });
+      }
+      if (losers.length) {
+        await tx.timelineEvent.createMany({
+          data: losers.map((u) => ({
+            userId: u,
+            gameId,
+            roomCode: roomCode ?? null,
+            kind: 'MATCH_LOSS',
+            meta: { winners, losers },
+          })),
+        });
+      }
 
       // أغلق الروم بعد حسم المباراة
       if (roomCode) {
