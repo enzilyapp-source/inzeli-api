@@ -46,6 +46,10 @@ model User {
 
   permanentScore Int @default(0)
 
+  // صور الملف الشخصي
+  avatarBase64 String?
+  avatarPath   String?
+
   // ✅ primary currency (monthly reset)
   pearls         Int  @default(5)
   pearlsSeasonYm Int? // ✅ nullable season marker
