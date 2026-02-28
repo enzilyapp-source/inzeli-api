@@ -13,8 +13,8 @@ async function bootstrap() {
   // ✅ CORS: يسمح فقط لدومين واجهتك (نتلايفاي)
   app.enableCors({
     origin: true,
-    methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-    allowedHeaders: ['Content-Type','Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   // ✅ كل مسارات الـ API تبدأ بـ /api
@@ -22,10 +22,10 @@ async function bootstrap() {
 
   // ✅ فالفيداشن للـ DTOs (يحذف قيم غريبة + يحوّل الأنواع)
   app.useGlobalPipes(
-    new ValidationPipe({ 
-      whitelist: true, 
-      forbidNonWhitelisted: true, 
-      transform: true 
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 

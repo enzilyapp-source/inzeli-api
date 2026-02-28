@@ -21,28 +21,39 @@ import { MatchesService } from '../matches/matches.service';
 const STAKE = 0; // لا نسحب لؤلؤ عند الإنشاء/الانضمام (يتم الخصم فقط عند الخسارة)
 const DEFAULT_RADIUS_METERS = 100;
 
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+function haversineMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const R = 6371000; // meters
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
 @Injectable()
 export class RoomsService {
-  constructor(private prisma: PrismaService, private matches: MatchesService) {}
+  constructor(
+    private prisma: PrismaService,
+    private matches: MatchesService,
+  ) {}
 
   // ---------- helpers ----------
   private newCode(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let s = '';
-    for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    for (let i = 0; i < 6; i++)
+      s += chars[Math.floor(Math.random() * chars.length)];
     return s;
   }
 
@@ -71,7 +82,10 @@ export class RoomsService {
     const calc = (team: 'A' | 'B') => {
       const list = (room.players || []).filter((p) => p.team === team);
       const required = list.length;
-      const available = list.reduce((sum, p) => sum + (p.user?.permanentScore ?? 0), 0);
+      const available = list.reduce(
+        (sum, p) => sum + (p.user?.permanentScore ?? 0),
+        0,
+      );
       const quorumMet = required > 0 && available >= required;
       return { required, available, quorumMet };
     };
@@ -90,7 +104,14 @@ export class RoomsService {
   }
 
   // ---------- core ----------
-  async createRoom(gameId: string, hostId: string, sponsorCode?: string, lat?: number, lng?: number, radiusMeters?: number) {
+  async createRoom(
+    gameId: string,
+    hostId: string,
+    sponsorCode?: string,
+    lat?: number,
+    lng?: number,
+    radiusMeters?: number,
+  ) {
     // ensure game exists
     await this.prisma.game.upsert({
       where: { id: gameId },
@@ -100,7 +121,8 @@ export class RoomsService {
 
     // unique code
     let code = this.newCode();
-    while (await this.prisma.room.findUnique({ where: { code } })) code = this.newCode();
+    while (await this.prisma.room.findUnique({ where: { code } }))
+      code = this.newCode();
 
     const room = await this.prisma.$transaction(async (tx) => {
       // no pearl deduction on create; stakes stay 0
@@ -131,8 +153,6 @@ export class RoomsService {
                   pearls: true,
                   creditPoints: true,
                   permanentScore: true,
-                  avatarBase64: true,
-                  avatarPath: true,
                 },
               },
             },
@@ -167,18 +187,18 @@ export class RoomsService {
       include: {
         players: {
           include: {
-              user: {
-                select: {
-                  id: true,
-                  displayName: true,
-                  email: true,
-                  pearls: true,
-                  creditPoints: true,
-                  permanentScore: true,
-                },
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                email: true,
+                pearls: true,
+                creditPoints: true,
+                permanentScore: true,
               },
             },
           },
+        },
         stakes: true,
       },
     });
@@ -193,7 +213,9 @@ export class RoomsService {
   }
 
   async join(code: string, userId: string, lat?: number, lng?: number) {
-    const room = (await this.prisma.room.findUnique({ where: { code } })) as any;
+    const room = (await this.prisma.room.findUnique({
+      where: { code },
+    })) as any;
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
 
     // لا يسمح بالانضمام بعد بدء العداد/الروم
@@ -217,7 +239,7 @@ export class RoomsService {
     }
 
     // read sponsorCode safely
-    const sponsorCode: string | null = (room as any)?.sponsorCode ?? null;
+    const sponsorCode: string | null = room?.sponsorCode ?? null;
 
     await this.prisma.$transaction(async (tx) => {
       const exists = await tx.roomPlayer.findUnique({
@@ -252,33 +274,40 @@ export class RoomsService {
   async start(
     code: string,
     hostId: string,
-    params: { targetWinPoints?: number; allowZeroCredit?: boolean; timerSec?: number },
+    params: {
+      targetWinPoints?: number;
+      allowZeroCredit?: boolean;
+      timerSec?: number;
+    },
   ) {
     const room = await this.prisma.room.findUnique({
       where: { code },
       include: {
         players: {
           include: {
-              user: {
-                select: {
-                  id: true,
-                  displayName: true,
-                  email: true,
-                  pearls: true,
-                  creditPoints: true,
-                  permanentScore: true,
-                },
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                email: true,
+                pearls: true,
+                creditPoints: true,
+                permanentScore: true,
               },
             },
           },
+        },
         stakes: true,
       },
     });
 
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
-    if (room.hostUserId !== hostId) throw new ForbiddenException('ONLY_HOST_CAN_START');
-    if (room.status !== 'waiting') throw new BadRequestException('ALREADY_STARTED');
-    if ((room.players?.length ?? 0) < 2) throw new BadRequestException('NEED_TWO_PLAYERS');
+    if (room.hostUserId !== hostId)
+      throw new ForbiddenException('ONLY_HOST_CAN_START');
+    if (room.status !== 'waiting')
+      throw new BadRequestException('ALREADY_STARTED');
+    if ((room.players?.length ?? 0) < 2)
+      throw new BadRequestException('NEED_TWO_PLAYERS');
 
     const target = params.targetWinPoints ?? null;
     const sec = params.timerSec ?? 600;
@@ -331,7 +360,8 @@ export class RoomsService {
 
     const room = await this.prisma.room.findUnique({ where: { code } });
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
-    if (room.status !== 'waiting') throw new BadRequestException('STAKE_ONLY_BEFORE_START');
+    if (room.status !== 'waiting')
+      throw new BadRequestException('STAKE_ONLY_BEFORE_START');
 
     const sponsorCode: string | null = (room as any)?.sponsorCode ?? null;
 
@@ -342,7 +372,14 @@ export class RoomsService {
       });
 
       if (old) {
-        if (sponsorCode) await incSponsorPearls(tx, userId, sponsorCode, room.gameId, old.amount);
+        if (sponsorCode)
+          await incSponsorPearls(
+            tx,
+            userId,
+            sponsorCode,
+            room.gameId,
+            old.amount,
+          );
         else await incGamePearls(tx, userId, room.gameId, old.amount);
 
         await tx.roomStake.delete({
@@ -353,7 +390,8 @@ export class RoomsService {
       // take new stake
       if (sponsorCode) {
         const p = await getSponsorPearls(tx, userId, sponsorCode, room.gameId);
-        if (p < amount) throw new BadRequestException('NOT_ENOUGH_PEARLS_SPONSOR');
+        if (p < amount)
+          throw new BadRequestException('NOT_ENOUGH_PEARLS_SPONSOR');
         await decSponsorPearls(tx, userId, sponsorCode, room.gameId, amount);
       } else {
         const p = await getGamePearls(tx, userId, room.gameId);
@@ -379,14 +417,21 @@ export class RoomsService {
   }
 
   // ---------- teams / leaders ----------
-  async setPlayerTeam(code: string, actorUserId: string, playerUserId: string, team: $Enums.TeamSide) {
+  async setPlayerTeam(
+    code: string,
+    actorUserId: string,
+    playerUserId: string,
+    team: $Enums.TeamSide,
+  ) {
     const room = await this.prisma.room.findUnique({
       where: { code },
       select: { hostUserId: true, status: true },
     });
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
-    if (room.hostUserId !== actorUserId) throw new ForbiddenException('ONLY_HOST_CAN_SET_TEAM');
-    if (room.status !== 'waiting') throw new BadRequestException('TEAM_ONLY_BEFORE_START');
+    if (room.hostUserId !== actorUserId)
+      throw new ForbiddenException('ONLY_HOST_CAN_SET_TEAM');
+    if (room.status !== 'waiting')
+      throw new BadRequestException('TEAM_ONLY_BEFORE_START');
 
     // ensure player exists in room
     const exists = await this.prisma.roomPlayer.findUnique({
@@ -411,14 +456,21 @@ export class RoomsService {
     return this.getByCode(code);
   }
 
-  async setTeamLeader(code: string, actorUserId: string, team: $Enums.TeamSide, leaderUserId: string) {
+  async setTeamLeader(
+    code: string,
+    actorUserId: string,
+    team: $Enums.TeamSide,
+    leaderUserId: string,
+  ) {
     const room = await this.prisma.room.findUnique({
       where: { code },
       select: { hostUserId: true, status: true },
     });
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
-    if (room.hostUserId !== actorUserId) throw new ForbiddenException('ONLY_HOST_CAN_SET_LEADER');
-    if (room.status !== 'waiting') throw new BadRequestException('LEADER_ONLY_BEFORE_START');
+    if (room.hostUserId !== actorUserId)
+      throw new ForbiddenException('ONLY_HOST_CAN_SET_LEADER');
+    if (room.status !== 'waiting')
+      throw new BadRequestException('LEADER_ONLY_BEFORE_START');
 
     // ensure leader is in the room on same team
     const player = await this.prisma.roomPlayer.findUnique({
@@ -465,7 +517,8 @@ export class RoomsService {
     payload: { winners: string[]; losers: string[] },
   ) {
     const room = await this.getRoomWithPlayers(code);
-    if (room.hostUserId !== hostId) throw new ForbiddenException('ONLY_HOST_CAN_SUBMIT');
+    if (room.hostUserId !== hostId)
+      throw new ForbiddenException('ONLY_HOST_CAN_SUBMIT');
     const winners = (payload.winners ?? []).filter(Boolean);
     const losers = (payload.losers ?? []).filter(Boolean);
     if (!winners.length) throw new BadRequestException('WINNERS_REQUIRED');
@@ -547,17 +600,25 @@ export class RoomsService {
       payload: room.resultPayload,
       submittedBy: room.resultSubmittedBy,
       updatedAt: room.resultUpdatedAt,
-      votes: room.resultVotes.map((v) => ({ userId: v.userId, approve: v.approve })),
+      votes: room.resultVotes.map((v) => ({
+        userId: v.userId,
+        approve: v.approve,
+      })),
       totalPlayers: room.players.length,
     };
   }
 
   private async finalizeResult(room: any) {
-    if (room.resultStatus === $Enums.RoomResultStatus.approved) return this.getResultState(room.code);
+    if (room.resultStatus === $Enums.RoomResultStatus.approved)
+      return this.getResultState(room.code);
 
-    const payload = (room.resultPayload as any) || {};
-    const winners: string[] = Array.isArray(payload.winners) ? payload.winners : [];
-    const losers: string[] = Array.isArray(payload.losers) ? payload.losers : [];
+    const payload = room.resultPayload || {};
+    const winners: string[] = Array.isArray(payload.winners)
+      ? payload.winners
+      : [];
+    const losers: string[] = Array.isArray(payload.losers)
+      ? payload.losers
+      : [];
 
     // أنشئ المباراة لتسوية اللآلئ والنتيجة
     await this.matches.createMatch({

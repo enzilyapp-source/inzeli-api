@@ -11,14 +11,23 @@ export class AuthController {
 
   @Post('register')
   async register(@Body() dto: RegisterDto) {
-    try { return ok('Account created 🎉', await this.auth.register(dto)); }
-    catch (e: any) { return err(e?.response?.message || 'Registration failed', e?.response?.message); }
+    try {
+      return ok('Account created 🎉', await this.auth.register(dto));
+    } catch (e: any) {
+      return err(
+        e?.response?.message || 'Registration failed',
+        e?.response?.message,
+      );
+    }
   }
 
   @Post('login')
   async login(@Body() dto: LoginDto) {
-    try { return ok('Signed in ✅', await this.auth.login(dto)); }
-    catch { return err('Invalid email or password', 'INVALID_CREDENTIALS'); }
+    try {
+      return ok('Signed in ✅', await this.auth.login(dto));
+    } catch {
+      return err('Invalid email or password', 'INVALID_CREDENTIALS');
+    }
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -27,4 +36,4 @@ export class AuthController {
     return ok('Profile', await this.auth.getProfile(req.user.userId));
   }
 }
-//auth/auth.controller.ts 
+//auth/auth.controller.ts

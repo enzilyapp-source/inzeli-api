@@ -15,7 +15,16 @@ export class DewanyahService {
     locationLock?: boolean;
     radiusMeters?: number;
   }) {
-    const { userId, name, contact, gameId, note, requireApproval, locationLock, radiusMeters } = params;
+    const {
+      userId,
+      name,
+      contact,
+      gameId,
+      note,
+      requireApproval,
+      locationLock,
+      radiusMeters,
+    } = params;
     return this.prisma.dewanyahRequest.create({
       data: {
         userId,
@@ -33,7 +42,9 @@ export class DewanyahService {
   async listRequests() {
     const reqs = await this.prisma.dewanyahRequest.findMany({
       orderBy: { createdAt: 'desc' },
-      include: { user: { select: { id: true, email: true, displayName: true } } },
+      include: {
+        user: { select: { id: true, email: true, displayName: true } },
+      },
     });
     // enrich with user info for the admin UI
     return reqs.map((r) => ({
@@ -65,7 +76,9 @@ export class DewanyahService {
   }
 
   async approveRequest(requestId: string, adminUserId?: string) {
-    const req = await this.prisma.dewanyahRequest.findUnique({ where: { id: requestId } });
+    const req = await this.prisma.dewanyahRequest.findUnique({
+      where: { id: requestId },
+    });
     if (!req) throw new Error('Request not found');
     if (req.status === 'approved') return req;
 
@@ -108,7 +121,18 @@ export class DewanyahService {
     return dew;
   }
 
-  async updateDewanyah(id: string, data: { name?: string; ownerName?: string; ownerEmail?: string; note?: string; imageUrl?: string; themePrimary?: string; themeAccent?: string }) {
+  async updateDewanyah(
+    id: string,
+    data: {
+      name?: string;
+      ownerName?: string;
+      ownerEmail?: string;
+      note?: string;
+      imageUrl?: string;
+      themePrimary?: string;
+      themeAccent?: string;
+    },
+  ) {
     return this.prisma.dewanyah.update({
       where: { id },
       data,
@@ -120,7 +144,9 @@ export class DewanyahService {
   }
 
   async getOwnerDewanyah(dewanyahId: string, ownerUserId: string) {
-    const dew = await this.prisma.dewanyah.findUnique({ where: { id: dewanyahId } });
+    const dew = await this.prisma.dewanyah.findUnique({
+      where: { id: dewanyahId },
+    });
     if (!dew) throw new Error('Dewanyah not found');
     if (dew.ownerUserId && dew.ownerUserId !== ownerUserId) {
       throw new Error('NOT_OWNER');
@@ -142,7 +168,9 @@ export class DewanyahService {
   }
 
   async requestJoin(dewanyahId: string, userId: string) {
-    const dew = await this.prisma.dewanyah.findUnique({ where: { id: dewanyahId } });
+    const dew = await this.prisma.dewanyah.findUnique({
+      where: { id: dewanyahId },
+    });
     if (!dew) throw new Error('Dewanyah not found');
     const status = dew.requireApproval ? 'pending' : 'approved';
     return this.prisma.dewanyahMember.upsert({
@@ -175,7 +203,9 @@ export class DewanyahService {
     await this.getOwnerDewanyah(dewanyahId, ownerUserId);
     return this.prisma.dewanyahMember.findMany({
       where: { dewanyahId },
-      include: { user: { select: { id: true, displayName: true, email: true } } },
+      include: {
+        user: { select: { id: true, displayName: true, email: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -233,7 +263,9 @@ export class DewanyahService {
     } = data;
     let ownerId = ownerUserId;
     if (!ownerId && ownerEmail) {
-      const user = await this.prisma.user.findUnique({ where: { email: ownerEmail } });
+      const user = await this.prisma.user.findUnique({
+        where: { email: ownerEmail },
+      });
       if (user) ownerId = user.id;
     }
     const fallbackOwner = ownerId ?? 'admin';
@@ -247,14 +279,23 @@ export class DewanyahService {
       locationLock: locationLock ?? false,
       radiusMeters,
       games: { create: [{ gameId }] },
-      members: ownerUserId != null
-          ? { create: [{ userId: ownerUserId, status: 'approved', approvedAt: new Date() }] }
+      members:
+        ownerUserId != null
+          ? {
+              create: [
+                {
+                  userId: ownerUserId,
+                  status: 'approved',
+                  approvedAt: new Date(),
+                },
+              ],
+            }
           : undefined,
     };
     if (imageUrl != null) payload.imageUrl = imageUrl;
     if (themePrimary != null) payload.themePrimary = themePrimary;
     if (themeAccent != null) payload.themeAccent = themeAccent;
 
-    return this.prisma.dewanyah.create({ data: payload as any });
+    return this.prisma.dewanyah.create({ data: payload });
   }
 }

@@ -56,14 +56,23 @@ async function listGameIds(tx: TxLike): Promise<string[]> {
   return games.map((g: any) => g.id);
 }
 
-async function ensureUserGameWallet(tx: TxLike, userId: string, gameId: string): Promise<number> {
+async function ensureUserGameWallet(
+  tx: TxLike,
+  userId: string,
+  gameId: string,
+): Promise<number> {
   const client = tx as any;
   const nowYm = seasonYm();
 
   const w = await client.userGameWallet.upsert({
     where: { userId_gameId: { userId, gameId } },
     update: {} as any,
-    create: { userId, gameId, pearls: SEASON_START_PEARLS, seasonYm: nowYm } as any,
+    create: {
+      userId,
+      gameId,
+      pearls: SEASON_START_PEARLS,
+      seasonYm: nowYm,
+    } as any,
     select: { pearls: true, seasonYm: true } as any,
   });
 
@@ -90,7 +99,11 @@ export async function ensureAllGameWallets(tx: TxLike, userId: string) {
 }
 
 // -------------------- REGULAR (User per-game pearls) --------------------
-export async function getGamePearls(tx: TxLike, userId: string, gameId: string): Promise<number> {
+export async function getGamePearls(
+  tx: TxLike,
+  userId: string,
+  gameId: string,
+): Promise<number> {
   return ensureUserGameWallet(tx, userId, gameId);
 }
 
@@ -170,7 +183,13 @@ export async function getSponsorPearls(
   const w = await client.sponsorGameWallet.upsert({
     where: { userId_sponsorCode_gameId: { userId, sponsorCode, gameId } },
     update: {} as any,
-    create: { userId, sponsorCode, gameId, pearls: SEASON_START_PEARLS, seasonYm: nowYm } as any,
+    create: {
+      userId,
+      sponsorCode,
+      gameId,
+      pearls: SEASON_START_PEARLS,
+      seasonYm: nowYm,
+    } as any,
     select: { pearls: true, seasonYm: true } as any,
   });
 

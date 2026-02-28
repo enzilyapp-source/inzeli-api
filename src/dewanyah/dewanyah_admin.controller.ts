@@ -1,14 +1,25 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { DewanyahService } from './dewanyah.service';
 import { ok, err } from '../common/api';
 import { AuthGuard } from '@nestjs/passport';
+import { AdminGuard } from '../auth/admin.guard';
 
 @Controller('admin/dewanyah')
 export class AdminDewanyahController {
   constructor(private readonly dewanyah: DewanyahService) {}
 
   // List all dewanyahs (admin)
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Get()
   async listAll() {
     try {
@@ -19,7 +30,7 @@ export class AdminDewanyahController {
   }
 
   // List creation requests (pending/approved)
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Get('requests')
   async listRequests() {
     try {
@@ -30,7 +41,7 @@ export class AdminDewanyahController {
   }
 
   // Approve & create dewanyah board
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Patch('requests/:id/approve')
   async approve(@Req() req: any, @Param('id') id: string) {
     try {
@@ -43,7 +54,7 @@ export class AdminDewanyahController {
   }
 
   // Add game to existing dewanyah
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Post(':id/games')
   async addGame(@Param('id') id: string, @Body() body: any) {
     try {
@@ -57,7 +68,7 @@ export class AdminDewanyahController {
   }
 
   // Create dewanyah directly (admin)
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Post()
   async createDirect(@Body() body: any) {
     try {
@@ -85,7 +96,7 @@ export class AdminDewanyahController {
   }
 
   // Update dewanyah
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Patch(':id')
   async update(@Param('id') id: string, @Body() body: any) {
     try {
@@ -106,7 +117,7 @@ export class AdminDewanyahController {
   }
 
   // Delete dewanyah
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Delete(':id')
   async delete(@Param('id') id: string) {
     try {

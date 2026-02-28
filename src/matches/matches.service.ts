@@ -19,7 +19,12 @@ import {
 export class MatchesService {
   constructor(private prisma: PrismaService) {}
 
-  async createMatch(input: { roomCode?: string; gameId: string; winners: string[]; losers: string[] }) {
+  async createMatch(input: {
+    roomCode?: string;
+    gameId: string;
+    winners: string[];
+    losers: string[];
+  }) {
     const { roomCode, gameId } = input;
     const winners = input.winners ?? [];
     const losers = input.losers ?? [];
@@ -29,9 +34,9 @@ export class MatchesService {
       throw new BadRequestException('EMPTY_MATCH');
     }
 
-    let room:
-      | (Prisma.RoomGetPayload<{ include: { players: { select: { userId: true; team: true } } } }>)
-      | null = null;
+    let room: Prisma.RoomGetPayload<{
+      include: { players: { select: { userId: true; team: true } } };
+    }> | null = null;
 
     if (roomCode) {
       room = await this.prisma.room.findUnique({
@@ -61,8 +66,14 @@ export class MatchesService {
         sponsorCode,
         parts: {
           create: [
-            ...winners.map((uid) => ({ userId: uid, outcome: 'WIN' as Outcome })),
-            ...losers.map((uid) => ({ userId: uid, outcome: 'LOSS' as Outcome })),
+            ...winners.map((uid) => ({
+              userId: uid,
+              outcome: 'WIN' as Outcome,
+            })),
+            ...losers.map((uid) => ({
+              userId: uid,
+              outcome: 'LOSS' as Outcome,
+            })),
           ],
         },
       },

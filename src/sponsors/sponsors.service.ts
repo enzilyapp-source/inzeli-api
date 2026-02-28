@@ -32,7 +32,15 @@ export class SponsorsService {
     });
   }
 
-  async updateSponsor(code: string, data: { name?: string; imageUrl?: string; themePrimary?: string; themeAccent?: string }) {
+  async updateSponsor(
+    code: string,
+    data: {
+      name?: string;
+      imageUrl?: string;
+      themePrimary?: string;
+      themeAccent?: string;
+    },
+  ) {
     return this.prisma.sponsor.update({
       where: { code },
       data: data as any,
@@ -88,7 +96,8 @@ export class SponsorsService {
       where: { code: sponsorCode },
       select: { code: true, active: true },
     });
-    if (!sponsor || !sponsor.active) throw new NotFoundException('SPONSOR_NOT_FOUND');
+    if (!sponsor || !sponsor.active)
+      throw new NotFoundException('SPONSOR_NOT_FOUND');
 
     // ensure relation (UserSponsor)
     await this.prisma.userSponsor.upsert({
@@ -134,7 +143,8 @@ export class SponsorsService {
       where: { code: sponsorCode },
       select: { code: true, active: true },
     });
-    if (!sponsor || !sponsor.active) throw new NotFoundException('SPONSOR_NOT_FOUND');
+    if (!sponsor || !sponsor.active)
+      throw new NotFoundException('SPONSOR_NOT_FOUND');
 
     // ensure relation + wallets (same seeding as joinSponsor)
     await this.prisma.userSponsor.upsert({

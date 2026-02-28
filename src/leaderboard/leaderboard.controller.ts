@@ -9,7 +9,10 @@ export class LeaderboardController {
   @Get('global')
   async global(@Query('limit') limit?: string) {
     try {
-      return ok('Global leaderboard', await this.lb.globalLeaderboard(Number(limit ?? 50)));
+      return ok(
+        'Global leaderboard',
+        await this.lb.globalLeaderboard(Number(limit ?? 50)),
+      );
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);
     }
@@ -20,7 +23,10 @@ export class LeaderboardController {
   async game(@Query('gameId') gameId?: string, @Query('limit') limit?: string) {
     try {
       if (!gameId) return err('Missing gameId', 'BAD_REQUEST');
-      return ok('Game leaderboard', await this.lb.gameLeaderboard(gameId, Number(limit ?? 50)));
+      return ok(
+        'Game leaderboard',
+        await this.lb.gameLeaderboard(gameId, Number(limit ?? 50)),
+      );
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);
     }
@@ -33,14 +39,19 @@ export class LeaderboardController {
     @Query('limit') limit?: string,
   ) {
     try {
-      if (!sponsorCode || !gameId) return err('Missing sponsorCode/gameId', 'BAD_REQUEST');
+      if (!sponsorCode || !gameId)
+        return err('Missing sponsorCode/gameId', 'BAD_REQUEST');
       return ok(
         'Sponsor leaderboard',
-        await this.lb.sponsorGameLeaderboard(sponsorCode, gameId, Number(limit ?? 50)),
+        await this.lb.sponsorGameLeaderboard(
+          sponsorCode,
+          gameId,
+          Number(limit ?? 50),
+        ),
       );
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);
     }
   }
 }
-//src/auth/leaderboard/leaderboard.controller.ts 
+//src/auth/leaderboard/leaderboard.controller.ts

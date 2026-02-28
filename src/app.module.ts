@@ -12,7 +12,17 @@ import { DewanyahModule } from './dewanyah/dewanyah.module';
 import { TimelineModule } from './timeline/timeline.module';
 
 @Module({
-  imports: [RoomsModule, AuthModule, MatchesModule, UsersModule, SponsorsModule, LeaderboardModule, StoreModule, DewanyahModule, TimelineModule],
+  imports: [
+    RoomsModule,
+    AuthModule,
+    MatchesModule,
+    UsersModule,
+    SponsorsModule,
+    LeaderboardModule,
+    StoreModule,
+    DewanyahModule,
+    TimelineModule,
+  ],
   controllers: [PingController], // ✅ مهم عشان /api/ping
 })
 export class AppModule {}

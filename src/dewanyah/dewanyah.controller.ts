@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards, Patch } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  Patch,
+} from '@nestjs/common';
 import { DewanyahService } from './dewanyah.service';
 import { ok, err } from '../common/api';
 import { AuthGuard } from '@nestjs/passport';

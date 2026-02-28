@@ -8,4 +8,4 @@ import { PrismaService } from '../prisma.service';
   providers: [LeaderboardService, PrismaService],
 })
 export class LeaderboardModule {}
-//src/auth/leaderboard/leaderboard.module.ts 
+//src/auth/leaderboard/leaderboard.module.ts

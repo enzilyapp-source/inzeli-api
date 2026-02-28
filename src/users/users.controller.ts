@@ -1,5 +1,13 @@
 // src/users/users.controller.ts
-import { Controller, Get, Param, UseGuards, Req, Delete, HttpCode } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  UseGuards,
+  Req,
+  Delete,
+  HttpCode,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../prisma.service';
 import { ok, err } from '../common/api';

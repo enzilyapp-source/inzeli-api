@@ -1,5 +1,13 @@
 // src/store/store.controller.ts
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { StoreService } from './store.service';
 import { ok, err } from '../common/api';
 import { AuthGuard } from '@nestjs/passport';
@@ -41,7 +49,15 @@ export class StoreController {
 
   @UseGuards(AuthGuard('jwt'))
   @Post('apply')
-  async apply(@Req() req: any, @Body() body: { themeId?: string | null; frameId?: string | null; cardId?: string | null }) {
+  async apply(
+    @Req() req: any,
+    @Body()
+    body: {
+      themeId?: string | null;
+      frameId?: string | null;
+      cardId?: string | null;
+    },
+  ) {
     try {
       const userId = req.user.userId;
       return ok('Applied', await this.store.apply(userId, body ?? {}));

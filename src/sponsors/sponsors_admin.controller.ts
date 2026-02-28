@@ -1,13 +1,23 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { SponsorsService } from './sponsors.service';
 import { ok, err } from '../common/api';
 import { AuthGuard } from '@nestjs/passport';
+import { AdminGuard } from '../auth/admin.guard';
 
 @Controller('admin/sponsors')
 export class SponsorsAdminController {
   constructor(private readonly sponsors: SponsorsService) {}
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Get()
   async list() {
     try {
@@ -17,7 +27,7 @@ export class SponsorsAdminController {
     }
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Post()
   async create(@Body() body: any) {
     try {
@@ -31,7 +41,7 @@ export class SponsorsAdminController {
     }
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Patch(':code')
   async update(@Param('code') code: string, @Body() body: any) {
     try {
@@ -48,7 +58,7 @@ export class SponsorsAdminController {
     }
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Delete(':code')
   async delete(@Param('code') code: string) {
     try {
@@ -59,7 +69,7 @@ export class SponsorsAdminController {
     }
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Post(':code/games')
   async addGame(@Param('code') code: string, @Body() body: any) {
     try {

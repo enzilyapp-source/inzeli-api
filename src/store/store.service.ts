@@ -1,5 +1,9 @@
 // src/store/store.service.ts
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 @Injectable()
@@ -22,13 +26,16 @@ export class StoreService {
   }
 
   async buy(userId: string, itemId: string) {
-    const item = await this.prisma.storeItem.findUnique({ where: { id: itemId } });
+    const item = await this.prisma.storeItem.findUnique({
+      where: { id: itemId },
+    });
     if (!item || !item.active) throw new NotFoundException('ITEM_NOT_FOUND');
 
     const owned = await this.prisma.userItem.findUnique({
       where: { userId_itemId: { userId, itemId } },
     });
-    if (owned) return { alreadyOwned: true, balance: await this.balance(userId) };
+    if (owned)
+      return { alreadyOwned: true, balance: await this.balance(userId) };
 
     const result = await this.prisma.$transaction(async (tx) => {
       const u = await tx.user.findUnique({
@@ -59,7 +66,14 @@ export class StoreService {
     return { itemId, balance: result.balance };
   }
 
-  async apply(userId: string, data: { themeId?: string | null; frameId?: string | null; cardId?: string | null }) {
+  async apply(
+    userId: string,
+    data: {
+      themeId?: string | null;
+      frameId?: string | null;
+      cardId?: string | null;
+    },
+  ) {
     const updates: any = {};
 
     const checkOwnership = async (itemId: string | null | undefined) => {
@@ -73,11 +87,13 @@ export class StoreService {
 
     if (data.themeId !== undefined) {
       if (data.themeId === null || data.themeId === '') updates.themeId = null;
-      else if (await checkOwnership(data.themeId)) updates.themeId = data.themeId;
+      else if (await checkOwnership(data.themeId))
+        updates.themeId = data.themeId;
     }
     if (data.frameId !== undefined) {
       if (data.frameId === null || data.frameId === '') updates.frameId = null;
-      else if (await checkOwnership(data.frameId)) updates.frameId = data.frameId;
+      else if (await checkOwnership(data.frameId))
+        updates.frameId = data.frameId;
     }
     if (data.cardId !== undefined) {
       if (data.cardId === null || data.cardId === '') updates.cardId = null;

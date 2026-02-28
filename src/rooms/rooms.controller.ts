@@ -1,5 +1,13 @@
 // src/rooms/rooms.controller.ts
-import { Body, Controller, Get, Param, Post, UseGuards, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { JoinRoomDto } from './dto/join-room.dto';
@@ -23,7 +31,14 @@ export class RoomsController {
       if (!hostId) throw new Error('AUTH_USER_ID_MISSING');
       return ok(
         'Room created 🎮',
-        await this.rooms.createRoom(dto.gameId, hostId, dto.sponsorCode, dto.lat, dto.lng, dto.radiusMeters),
+        await this.rooms.createRoom(
+          dto.gameId,
+          hostId,
+          dto.sponsorCode,
+          dto.lat,
+          dto.lng,
+          dto.radiusMeters,
+        ),
       );
     } catch (e: any) {
       return err(e?.message || 'Create failed', e?.message);
@@ -35,7 +50,10 @@ export class RoomsController {
     try {
       return ok('Room fetched', await this.rooms.getByCode(code));
     } catch (e: any) {
-      return err(e?.message || 'Room not found', e?.message || 'ROOM_NOT_FOUND');
+      return err(
+        e?.message || 'Room not found',
+        e?.message || 'ROOM_NOT_FOUND',
+      );
     }
   }
 
@@ -45,7 +63,10 @@ export class RoomsController {
     try {
       const userId = getReqUserId(req);
       if (!userId) throw new Error('AUTH_USER_ID_MISSING');
-      return ok('Joined room 👌', await this.rooms.join(dto.code, userId, dto.lat, dto.lng));
+      return ok(
+        'Joined room 👌',
+        await this.rooms.join(dto.code, userId, dto.lat, dto.lng),
+      );
     } catch (e: any) {
       return err(e?.message || 'Join failed', e?.message);
     }
@@ -56,12 +77,20 @@ export class RoomsController {
   async start(
     @Req() req: any,
     @Param('code') code: string,
-    @Body() body: { targetWinPoints?: number; allowZeroCredit?: boolean; timerSec?: number },
+    @Body()
+    body: {
+      targetWinPoints?: number;
+      allowZeroCredit?: boolean;
+      timerSec?: number;
+    },
   ) {
     try {
       const hostId = getReqUserId(req);
       if (!hostId) throw new Error('AUTH_USER_ID_MISSING');
-      return ok('Room started 🚀', await this.rooms.start(code, hostId, body || {}));
+      return ok(
+        'Room started 🚀',
+        await this.rooms.start(code, hostId, body || {}),
+      );
     } catch (e: any) {
       return err(e?.message || 'Start failed', e?.message);
     }
@@ -78,7 +107,14 @@ export class RoomsController {
     try {
       const hostId = getReqUserId(req);
       if (!hostId) throw new Error('AUTH_USER_ID_MISSING');
-      return ok('Result submitted', await this.rooms.submitResult(code, hostId, body || { winners: [], losers: [] }));
+      return ok(
+        'Result submitted',
+        await this.rooms.submitResult(
+          code,
+          hostId,
+          body || { winners: [], losers: [] },
+        ),
+      );
     } catch (e: any) {
       return err(e?.message || 'Result submit failed', e?.message);
     }
@@ -95,7 +131,10 @@ export class RoomsController {
     try {
       const userId = getReqUserId(req);
       if (!userId) throw new Error('AUTH_USER_ID_MISSING');
-      return ok('Vote recorded', await this.rooms.voteResult(code, userId, !!body?.approve));
+      return ok(
+        'Vote recorded',
+        await this.rooms.voteResult(code, userId, !!body?.approve),
+      );
     } catch (e: any) {
       return err(e?.message || 'Vote failed', e?.message);
     }
@@ -114,11 +153,18 @@ export class RoomsController {
 
   @UseGuards(AuthGuard('jwt'))
   @Post(':code/stake')
-  async setStake(@Req() req: any, @Param('code') code: string, @Body() body: { amount: number }) {
+  async setStake(
+    @Req() req: any,
+    @Param('code') code: string,
+    @Body() body: { amount: number },
+  ) {
     try {
       const userId = getReqUserId(req);
       if (!userId) throw new Error('AUTH_USER_ID_MISSING');
-      return ok('Points set 💰', await this.rooms.setStake(code, userId, Number(body.amount ?? 0)));
+      return ok(
+        'Points set 💰',
+        await this.rooms.setStake(code, userId, Number(body.amount ?? 0)),
+      );
     } catch (e: any) {
       return err(e?.message || 'Set points failed', e?.message);
     }
@@ -137,7 +183,12 @@ export class RoomsController {
       if (!userId) throw new Error('AUTH_USER_ID_MISSING');
       return ok(
         'Team set ✅',
-        await this.rooms.setPlayerTeam(code, userId, body.playerUserId, body.team as any),
+        await this.rooms.setPlayerTeam(
+          code,
+          userId,
+          body.playerUserId,
+          body.team as any,
+        ),
       );
     } catch (e: any) {
       return err(e?.message || 'Team set failed', e?.message);
@@ -157,7 +208,12 @@ export class RoomsController {
       if (!userId) throw new Error('AUTH_USER_ID_MISSING');
       return ok(
         'Leader set ✅',
-        await this.rooms.setTeamLeader(code, userId, body.team as any, body.leaderUserId),
+        await this.rooms.setTeamLeader(
+          code,
+          userId,
+          body.team as any,
+          body.leaderUserId,
+        ),
       );
     } catch (e: any) {
       return err(e?.message || 'Leader set failed', e?.message);

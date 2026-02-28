@@ -1,5 +1,9 @@
 // src/auth/auth.service.ts
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -8,15 +12,23 @@ import { LoginDto } from './dto/login.dto';
 import { ensureAllGameWallets } from '../common/pearls';
 
 function isBcryptHash(s: string) {
-  return typeof s === 'string' && (s.startsWith('$2a$') || s.startsWith('$2b$'));
+  return (
+    typeof s === 'string' && (s.startsWith('$2a$') || s.startsWith('$2b$'))
+  );
 }
 
 @Injectable()
 export class AuthService {
-  constructor(private prisma: PrismaService, private jwt: JwtService) {}
+  constructor(
+    private prisma: PrismaService,
+    private jwt: JwtService,
+  ) {}
 
   // نحول المستخدم لشكل آمن ومتوافق مع Flutter
-  private toSafeUser(user: any, extras?: { pearls?: number; gamePearls?: Record<string, number> }) {
+  private toSafeUser(
+    user: any,
+    extras?: { pearls?: number; gamePearls?: Record<string, number> },
+  ) {
     const pearls = extras?.pearls ?? user.pearls ?? user.creditPoints ?? 0;
     return {
       id: user.id,
@@ -60,7 +72,13 @@ export class AuthService {
 
     const pearlsSnapshot = await this.loadPearlsSnapshot(user.id);
     const token = await this.jwt.signAsync({ sub: user.id, email: user.email });
-    return { user: this.toSafeUser({ ...user, pearls: pearlsSnapshot.pearls }, pearlsSnapshot), token };
+    return {
+      user: this.toSafeUser(
+        { ...user, pearls: pearlsSnapshot.pearls },
+        pearlsSnapshot,
+      ),
+      token,
+    };
   }
 
   async login(dto: LoginDto) {
@@ -90,13 +108,22 @@ export class AuthService {
 
     const pearlsSnapshot = await this.loadPearlsSnapshot(user.id);
     const token = await this.jwt.signAsync({ sub: user.id, email: user.email });
-    return { user: this.toSafeUser({ ...user, pearls: pearlsSnapshot.pearls }, pearlsSnapshot), token };
+    return {
+      user: this.toSafeUser(
+        { ...user, pearls: pearlsSnapshot.pearls },
+        pearlsSnapshot,
+      ),
+      token,
+    };
   }
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('USER_NOT_FOUND');
     const pearlsSnapshot = await this.loadPearlsSnapshot(userId);
-    return this.toSafeUser({ ...user, pearls: pearlsSnapshot.pearls }, pearlsSnapshot);
+    return this.toSafeUser(
+      { ...user, pearls: pearlsSnapshot.pearls },
+      pearlsSnapshot,
+    );
   }
 }

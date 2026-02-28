@@ -43,11 +43,16 @@ export class LeaderboardService {
 
     const wallets = await this.prisma.userGameWallet.findMany({
       where: { gameId },
-      include: { user: { select: { id: true, displayName: true, email: true } } },
+      include: {
+        user: { select: { id: true, displayName: true, email: true } },
+      },
       orderBy: [{ pearls: 'desc' }, { updatedAt: 'desc' }],
     });
 
-    const walletMap = new Map<string, { pearls: number; displayName: string; email: string }>();
+    const walletMap = new Map<
+      string,
+      { pearls: number; displayName: string; email: string }
+    >();
     for (const w of wallets) {
       walletMap.set(w.userId, {
         pearls: w.pearls ?? 0,
@@ -91,7 +96,11 @@ export class LeaderboardService {
     };
   }
 
-  async sponsorGameLeaderboard(sponsorCode: string, gameId: string, limit = 50) {
+  async sponsorGameLeaderboard(
+    sponsorCode: string,
+    gameId: string,
+    limit = 50,
+  ) {
     const sponsor = await this.prisma.sponsor.findUnique({
       where: { code: sponsorCode },
       select: { code: true, name: true, active: true },
@@ -102,9 +111,14 @@ export class LeaderboardService {
     // 1) اجمع كل من عنده محفظة + كل من لعب مباراة لهذا السبونسر/اللعبة
     const wallets = await this.prisma.sponsorGameWallet.findMany({
       where: { sponsorCode, gameId },
-      include: { user: { select: { id: true, displayName: true, email: true } } },
+      include: {
+        user: { select: { id: true, displayName: true, email: true } },
+      },
     });
-    const walletMap = new Map<string, { pearls: number; displayName: string; email: string }>();
+    const walletMap = new Map<
+      string,
+      { pearls: number; displayName: string; email: string }
+    >();
     for (const w of wallets) {
       walletMap.set(w.userId, {
         pearls: w.pearls ?? 0,
