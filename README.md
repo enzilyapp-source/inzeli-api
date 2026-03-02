@@ -25,6 +25,65 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Phone OTP Setup (Inzeli)
+
+The auth flow now supports phone verification via OTP for registration:
+
+- `POST /api/auth/register/request-otp`
+- `POST /api/auth/register/verify-otp`
+
+### Required Environment Variables (SMS)
+
+Use Twilio SMS for real OTP delivery:
+
+```bash
+TWILIO_ACCOUNT_SID=...
+TWILIO_AUTH_TOKEN=...
+TWILIO_FROM_NUMBER=+1XXXXXXXXXX
+```
+
+Optional controls:
+
+```bash
+# OTP TTL in seconds (default: 300)
+AUTH_OTP_TTL_SEC=300
+
+# Max OTP attempts per challenge (default: 5)
+AUTH_OTP_MAX_ATTEMPTS=5
+
+# Min seconds between OTP sends per phone (default: 45)
+AUTH_OTP_RATE_WINDOW_SEC=45
+
+# Optional hardening for old users:
+# if true, login rejects non-test users without verified phone
+AUTH_REQUIRE_VERIFIED_PHONE_ON_LOGIN=false
+
+# Optional debug (never enable in production)
+AUTH_DEBUG_OTP=false
+
+# Optional explicit test account bypass list
+AUTH_TEST_ACCOUNT_EMAILS=review@inzeli.app,test1@test.com,test2@test.com,test3@test.com,test4@test.com
+AUTH_TEST_ACCOUNT_PHONES=
+```
+
+### Test Accounts (5 accounts including Review)
+
+Seed test accounts with:
+
+```bash
+npm run seed:test-users
+```
+
+Default password:
+
+- `Test@123456`
+
+You can override it:
+
+```bash
+TEST_ACCOUNT_PASSWORD=YourStrongPass npm run seed:test-users
+```
+
 ## Project setup
 
 ```bash

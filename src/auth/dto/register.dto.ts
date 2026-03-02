@@ -1,14 +1,5 @@
-import {
-  IsEmail,
-  IsNotEmpty,
-  MinLength,
-  IsOptional,
-  IsISO8601,
-} from 'class-validator';
-export class RegisterDto {
-  @IsEmail() email!: string;
-  @IsNotEmpty() @MinLength(6) password!: string;
-  @IsNotEmpty() displayName!: string;
-  @IsOptional() @IsISO8601() birthDate?: string;
-}
+import { RequestRegisterOtpDto } from './request-register-otp.dto';
+
+// Legacy alias DTO for POST /auth/register
+export class RegisterDto extends RequestRegisterOtpDto {}
 //scr/auth/dto/register.dto.ts
