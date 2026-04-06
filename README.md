@@ -62,7 +62,7 @@ AUTH_REQUIRE_VERIFIED_PHONE_ON_LOGIN=false
 AUTH_DEBUG_OTP=false
 
 # Optional explicit test account bypass list
-AUTH_TEST_ACCOUNT_EMAILS=review@inzeli.app,test1@test.com,test2@test.com,test3@test.com,test4@test.com
+AUTH_TEST_ACCOUNT_EMAILS=review@enzily.app,review@inzeli.app,test1@test.com,test2@test.com,test3@test.com,test4@test.com
 AUTH_TEST_ACCOUNT_PHONES=
 ```
 

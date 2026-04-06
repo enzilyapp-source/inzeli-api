@@ -122,6 +122,7 @@ export class AuthService {
 
   private testAccountEmails() {
     return csvToSet(process.env.AUTH_TEST_ACCOUNT_EMAILS, [
+      'review@enzily.app',
       'review@inzeli.app',
       'test1@test.com',
       'test2@test.com',

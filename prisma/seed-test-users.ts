@@ -7,7 +7,7 @@ const DEFAULT_PASSWORD = process.env.TEST_ACCOUNT_PASSWORD || 'Test@123456';
 
 const TEST_ACCOUNTS = [
   {
-    email: 'review@inzeli.app',
+    email: 'review@enzily.app',
     displayName: 'Apple Review',
     phone: '+96550000001',
   },
