@@ -237,7 +237,7 @@ export class SponsorsService {
 
     // Base: wallets = who is active in this sponsor game
     const wallets = await this.prisma.sponsorGameWallet.findMany({
-      where: { sponsorCode, gameId },
+      where: { sponsorCode, gameId, user: { hideFromLeaderboard: false } },
       include: {
         user: { select: { id: true, displayName: true, email: true } },
       },

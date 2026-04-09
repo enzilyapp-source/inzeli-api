@@ -7,6 +7,7 @@ export class LeaderboardService {
 
   async globalLeaderboard(limit = 50) {
     const users = await this.prisma.user.findMany({
+      where: { hideFromLeaderboard: false },
       orderBy: [{ permanentScore: 'desc' }, { createdAt: 'asc' }],
       take: limit,
       select: {
@@ -42,7 +43,7 @@ export class LeaderboardService {
     const FALLBACK_PEARLS = 5;
 
     const wallets = await this.prisma.userGameWallet.findMany({
-      where: { gameId },
+      where: { gameId, user: { hideFromLeaderboard: false } },
       include: {
         user: { select: { id: true, displayName: true, email: true } },
       },
@@ -62,6 +63,7 @@ export class LeaderboardService {
     }
 
     const everyone = await this.prisma.user.findMany({
+      where: { hideFromLeaderboard: false },
       select: { id: true, displayName: true, email: true },
     });
 
@@ -110,7 +112,7 @@ export class LeaderboardService {
 
     // 1) اجمع كل من عنده محفظة + كل من لعب مباراة لهذا السبونسر/اللعبة
     const wallets = await this.prisma.sponsorGameWallet.findMany({
-      where: { sponsorCode, gameId },
+      where: { sponsorCode, gameId, user: { hideFromLeaderboard: false } },
       include: {
         user: { select: { id: true, displayName: true, email: true } },
       },
@@ -128,7 +130,7 @@ export class LeaderboardService {
     }
 
     const participants = await this.prisma.matchParticipant.findMany({
-      where: { match: { sponsorCode, gameId } },
+      where: { match: { sponsorCode, gameId }, user: { hideFromLeaderboard: false } },
       select: {
         userId: true,
         user: { select: { displayName: true, email: true } },
@@ -165,6 +167,7 @@ export class LeaderboardService {
 
     // add all users (حتى لو ما اشترك أو لعب) — يظهر برصيد 0
     const everyone = await this.prisma.user.findMany({
+      where: { hideFromLeaderboard: false },
       select: { id: true, displayName: true, email: true },
     });
     for (const u of everyone) {

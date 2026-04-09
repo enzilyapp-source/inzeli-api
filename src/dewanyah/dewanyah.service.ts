@@ -214,7 +214,7 @@ export class DewanyahService {
   async leaderboard(dewanyahId: string, limit = 100) {
     const n = Math.max(1, Math.min(100, limit));
     const members = await this.prisma.dewanyahMember.findMany({
-      where: { dewanyahId, status: 'approved' },
+      where: { dewanyahId, status: 'approved', user: { hideFromLeaderboard: false } },
       orderBy: { approvedAt: 'desc' },
       take: n,
       include: {
