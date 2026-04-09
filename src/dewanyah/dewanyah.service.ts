@@ -49,6 +49,7 @@ export class DewanyahService {
     // enrich with user info for the admin UI
     return reqs.map((r) => ({
       ...r,
+      ownerUserId: r.userId,
       ownerEmail: r.user?.email,
       owner: r.user?.displayName,
     }));
