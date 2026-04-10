@@ -11,6 +11,8 @@ export class DewanyahService {
     contact: string;
     gameId?: string;
     note?: string;
+    anchorLat?: number;
+    anchorLng?: number;
     requireApproval?: boolean;
     locationLock?: boolean;
     radiusMeters?: number;
@@ -21,6 +23,8 @@ export class DewanyahService {
       contact,
       gameId,
       note,
+      anchorLat,
+      anchorLng,
       requireApproval,
       locationLock,
       radiusMeters,
@@ -32,6 +36,8 @@ export class DewanyahService {
         contact,
         gameId,
         note,
+        anchorLat,
+        anchorLng,
         requireApproval: requireApproval ?? true,
         locationLock: locationLock ?? false,
         radiusMeters,
@@ -89,6 +95,8 @@ export class DewanyahService {
         ownerUserId: req.userId,
         ownerEmail: undefined,
         ownerName: undefined,
+        anchorLat: req.anchorLat ?? undefined,
+        anchorLng: req.anchorLng ?? undefined,
         note: req.note,
         locationLock: req.locationLock,
         radiusMeters: req.radiusMeters,
@@ -188,6 +196,57 @@ export class DewanyahService {
     });
   }
 
+  async listPendingJoinRequestsForOwner(ownerUserId: string) {
+    const rows = await this.prisma.dewanyahMember.findMany({
+      where: {
+        status: 'pending',
+        dewanyah: { ownerUserId },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        dewanyah: { select: { id: true, name: true } },
+        user: { select: { id: true, displayName: true, email: true } },
+      },
+    });
+
+    const grouped = new Map<
+      string,
+      {
+        dewanyahId: string;
+        dewanyahName: string;
+        pendingCount: number;
+        lastRequestAt: Date;
+      }
+    >();
+
+    for (const row of rows) {
+      const dewanyahId = row.dewanyahId;
+      const existing = grouped.get(dewanyahId);
+      if (!existing) {
+        grouped.set(dewanyahId, {
+          dewanyahId,
+          dewanyahName: row.dewanyah?.name ?? 'ديوانية',
+          pendingCount: 1,
+          lastRequestAt: row.createdAt,
+        });
+        continue;
+      }
+      existing.pendingCount += 1;
+      if (row.createdAt.getTime() > existing.lastRequestAt.getTime()) {
+        existing.lastRequestAt = row.createdAt;
+      }
+    }
+
+    return Array.from(grouped.values())
+      .sort((a, b) => b.lastRequestAt.getTime() - a.lastRequestAt.getTime())
+      .map((x) => ({
+        dewanyahId: x.dewanyahId,
+        dewanyahName: x.dewanyahName,
+        pendingCount: x.pendingCount,
+        lastRequestAt: x.lastRequestAt,
+      }));
+  }
+
   async setMemberStatus(dewanyahId: string, userId: string, status: string) {
     return this.prisma.dewanyahMember.update({
       where: {
@@ -244,6 +303,8 @@ export class DewanyahService {
     requireApproval?: boolean;
     locationLock?: boolean;
     radiusMeters?: number;
+    anchorLat?: number;
+    anchorLng?: number;
     imageUrl?: string;
     themePrimary?: string;
     themeAccent?: string;
@@ -258,6 +319,8 @@ export class DewanyahService {
       requireApproval,
       locationLock,
       radiusMeters,
+      anchorLat,
+      anchorLng,
       imageUrl,
       themePrimary,
       themeAccent,
@@ -275,6 +338,8 @@ export class DewanyahService {
       ownerName,
       ownerEmail,
       ownerUserId: fallbackOwner,
+      anchorLat: anchorLat ?? undefined,
+      anchorLng: anchorLng ?? undefined,
       note,
       requireApproval: requireApproval ?? true,
       locationLock: locationLock ?? false,

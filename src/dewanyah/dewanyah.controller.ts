@@ -13,6 +13,11 @@ import { DewanyahService } from './dewanyah.service';
 import { ok, err } from '../common/api';
 import { AuthGuard } from '@nestjs/passport';
 
+function toNumberOrUndefined(v: unknown) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 @Controller('dewanyah')
 export class DewanyahController {
   constructor(private readonly dewanyah: DewanyahService) {}
@@ -31,6 +36,8 @@ export class DewanyahController {
         contact,
         gameId: body?.gameId,
         note: body?.note,
+        anchorLat: toNumberOrUndefined(body?.anchorLat),
+        anchorLng: toNumberOrUndefined(body?.anchorLng),
         requireApproval: body?.requireApproval,
         locationLock: body?.locationLock,
         radiusMeters: body?.radiusMeters,
@@ -57,6 +64,19 @@ export class DewanyahController {
       const userId = req.user.userId;
       const data = await this.dewanyah.requestJoin(id, userId);
       return ok('Join recorded', data);
+    } catch (e: any) {
+      return err(e?.message || 'Failed', e?.message);
+    }
+  }
+
+  // Owner: lightweight pending requests summary for alerts/badges
+  @UseGuards(AuthGuard('jwt'))
+  @Get('owner/pending-joins')
+  async ownerPendingJoins(@Req() req: any) {
+    try {
+      const userId = req.user.userId;
+      const data = await this.dewanyah.listPendingJoinRequestsForOwner(userId);
+      return ok('Pending joins', data);
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);
     }

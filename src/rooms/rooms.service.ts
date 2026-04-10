@@ -20,6 +20,7 @@ import { MatchesService } from '../matches/matches.service';
 
 const STAKE = 0; // لا نسحب لؤلؤ عند الإنشاء/الانضمام (يتم الخصم فقط عند الخسارة)
 const DEFAULT_RADIUS_METERS = 100;
+const DAFAN_MAX_PLAYERS = 6;
 
 function haversineMeters(
   lat1: number,
@@ -90,6 +91,11 @@ export class RoomsService {
       return { required, available, quorumMet };
     };
     return { A: calc('A'), B: calc('B') };
+  }
+
+  private isDafanGame(gameId?: string | null) {
+    const g = (gameId ?? '').toString().trim().toLowerCase();
+    return g == 'دفان' || g == 'dafan';
   }
 
   private async getRoomWithPlayers(code: string) {
@@ -247,6 +253,15 @@ export class RoomsService {
       });
       if (exists) return;
 
+      if (this.isDafanGame(room.gameId)) {
+        const playersCount = await tx.roomPlayer.count({
+          where: { roomCode: code },
+        });
+        if (playersCount >= DAFAN_MAX_PLAYERS) {
+          throw new BadRequestException('DAFAN_ROOM_FULL_MAX_6');
+        }
+      }
+
       // no pearl deduction on join
       const stake = 0;
 
@@ -308,6 +323,18 @@ export class RoomsService {
       throw new BadRequestException('ALREADY_STARTED');
     if ((room.players?.length ?? 0) < 2)
       throw new BadRequestException('NEED_TWO_PLAYERS');
+
+    if (this.isDafanGame(room.gameId)) {
+      const total = room.players?.length ?? 0;
+      if (total !== DAFAN_MAX_PLAYERS) {
+        throw new BadRequestException('DAFAN_NEEDS_EXACTLY_6_PLAYERS');
+      }
+      const teamA = room.players.filter((p) => p.team === 'A').length;
+      const teamB = room.players.filter((p) => p.team === 'B').length;
+      if (teamA !== 3 || teamB !== 3) {
+        throw new BadRequestException('DAFAN_NEEDS_TEAM_3V3');
+      }
+    }
 
     const target = params.targetWinPoints ?? null;
     const sec = params.timerSec ?? 600;

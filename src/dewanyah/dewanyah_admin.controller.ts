@@ -14,6 +14,11 @@ import { ok, err } from '../common/api';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from '../auth/admin.guard';
 
+function toNumberOrUndefined(v: unknown) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 @Controller('admin/dewanyah')
 export class AdminDewanyahController {
   constructor(private readonly dewanyah: DewanyahService) {}
@@ -85,6 +90,8 @@ export class AdminDewanyahController {
         requireApproval: body?.requireApproval,
         locationLock: body?.locationLock,
         radiusMeters: body?.lockRadius ?? body?.radiusMeters,
+        anchorLat: toNumberOrUndefined(body?.anchorLat ?? body?.lockLat),
+        anchorLng: toNumberOrUndefined(body?.anchorLng ?? body?.lockLng),
         imageUrl: body?.imageUrl,
         themePrimary: body?.themePrimary,
         themeAccent: body?.themeAccent,

@@ -300,6 +300,8 @@ model Dewanyah {
   ownerUserId     String
   ownerEmail      String?
   ownerName       String?
+  anchorLat       Float?
+  anchorLng       Float?
   imageUrl        String?
   themePrimary    String?
   themeAccent     String?
@@ -347,6 +349,8 @@ model DewanyahRequest {
   contact         String
   gameId          String?
   note            String?
+  anchorLat       Float?
+  anchorLng       Float?
   requireApproval Boolean   @default(true)
   locationLock    Boolean   @default(false)
   radiusMeters    Int?
