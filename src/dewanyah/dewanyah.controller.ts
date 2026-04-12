@@ -36,6 +36,7 @@ export class DewanyahController {
         contact,
         gameId: body?.gameId,
         note: body?.note,
+        prizeAmount: toNumberOrUndefined(body?.prizeAmount),
         anchorLat: toNumberOrUndefined(body?.anchorLat),
         anchorLng: toNumberOrUndefined(body?.anchorLng),
         requireApproval: body?.requireApproval,
@@ -83,10 +84,18 @@ export class DewanyahController {
   }
 
   @Get(':id/leaderboard')
-  async leaderboard(@Param('id') id: string, @Query('limit') limit?: string) {
+  async leaderboard(
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+    @Query('gameId') gameId?: string,
+  ) {
     try {
       const n = Math.max(1, Math.min(100, Number(limit ?? 100) || 100));
-      const data = await this.dewanyah.leaderboard(id, n);
+      const selectedGameId =
+        typeof gameId === 'string' && gameId.trim().length > 0
+          ? gameId.trim()
+          : undefined;
+      const data = await this.dewanyah.leaderboard(id, n, selectedGameId);
       return ok('Leaderboard', data);
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);

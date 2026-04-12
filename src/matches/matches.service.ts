@@ -9,10 +9,13 @@ import { Prisma, Outcome } from '@prisma/client';
 import {
   incGamePearls,
   incSponsorPearls,
+  incDewanyahPearls,
   getGamePearls,
   getSponsorPearls,
+  getDewanyahPearls,
   decGamePearls,
   decSponsorPearls,
+  decDewanyahPearls,
 } from '../common/pearls';
 
 @Injectable()
@@ -101,6 +104,8 @@ export class MatchesService {
           room ?? (await tx.room.findUnique({ where: { code: roomCode } }));
 
         const sc: string | null = sponsorCode;
+        const dewanyahId: string | null =
+          ((latestRoom as any)?.dewanyahId as string | null) ?? null;
         const game = latestRoom!.gameId;
 
         // خصم 1 لؤلؤة من كل خاسر (إذا عنده)، وجمعها
@@ -111,6 +116,12 @@ export class MatchesService {
               const cur = await getSponsorPearls(tx, lo, sc, game);
               if (cur > 0) {
                 await decSponsorPearls(tx, lo, sc, game, 1);
+                pot += 1;
+              }
+            } else if (dewanyahId) {
+              const cur = await getDewanyahPearls(tx, lo, dewanyahId, game);
+              if (cur > 0) {
+                await decDewanyahPearls(tx, lo, dewanyahId, game, 1);
                 pot += 1;
               }
             } else {
@@ -133,6 +144,8 @@ export class MatchesService {
             const inc = per + (i === 0 ? rem : 0);
             if (inc > 0) {
               if (sc) await incSponsorPearls(tx, winners[i], sc, game, inc);
+              else if (dewanyahId)
+                await incDewanyahPearls(tx, winners[i], dewanyahId, game, inc);
               else await incGamePearls(tx, winners[i], game, inc);
             }
           }

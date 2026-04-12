@@ -5,12 +5,79 @@ import { PrismaService } from '../prisma.service';
 export class DewanyahService {
   constructor(private prisma: PrismaService) {}
 
+  private normalizePrizeAmount(value: number | undefined) {
+    if (value == null || !Number.isFinite(value)) return undefined;
+    return Math.max(0, Math.trunc(value));
+  }
+
+  private get oneSignalAppId() {
+    return (process.env.ONESIGNAL_APP_ID ?? '').trim();
+  }
+
+  private get oneSignalApiKey() {
+    return (process.env.ONESIGNAL_REST_API_KEY ?? '').trim();
+  }
+
+  private async notifyDewanyahOwnerJoinRequest(params: {
+    ownerUserId: string;
+    dewanyahId: string;
+    dewanyahName: string;
+    requesterName: string;
+  }) {
+    const appId = this.oneSignalAppId;
+    const apiKey = this.oneSignalApiKey;
+    if (!appId || !apiKey) return;
+
+    const { ownerUserId, dewanyahId, dewanyahName, requesterName } = params;
+
+    const payload = {
+      app_id: appId,
+      include_external_user_ids: [ownerUserId],
+      channel_for_external_user_ids: 'push',
+      headings: {
+        en: 'New Dewanyah Join Request',
+        ar: 'طلب انضمام جديد للديوانية',
+      },
+      contents: {
+        en: `${requesterName} requested to join ${dewanyahName}`,
+        ar: `${requesterName} طلب الانضمام إلى ${dewanyahName}`,
+      },
+      data: {
+        type: 'dewanyah_join_request',
+        dewanyahId,
+      },
+      ios_badgeType: 'Increase',
+      ios_badgeCount: 1,
+    };
+
+    try {
+      const res = await fetch('https://onesignal.com/api/v1/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Key ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const raw = await res.text();
+        // keep request flow resilient; notification failure must not block gameplay.
+        console.warn(
+          `OneSignal notify failed (${res.status}): ${raw.slice(0, 300)}`,
+        );
+      }
+    } catch (e: any) {
+      console.warn(`OneSignal notify error: ${e?.message || e}`);
+    }
+  }
+
   async createRequest(params: {
     userId: string;
     name: string;
     contact: string;
     gameId?: string;
     note?: string;
+    prizeAmount?: number;
     anchorLat?: number;
     anchorLng?: number;
     requireApproval?: boolean;
@@ -23,12 +90,14 @@ export class DewanyahService {
       contact,
       gameId,
       note,
+      prizeAmount,
       anchorLat,
       anchorLng,
       requireApproval,
       locationLock,
       radiusMeters,
     } = params;
+    const normalizedPrizeAmount = this.normalizePrizeAmount(prizeAmount);
     return this.prisma.dewanyahRequest.create({
       data: {
         userId,
@@ -36,6 +105,7 @@ export class DewanyahService {
         contact,
         gameId,
         note,
+        prizeAmount: normalizedPrizeAmount,
         anchorLat,
         anchorLng,
         requireApproval: requireApproval ?? true,
@@ -95,6 +165,7 @@ export class DewanyahService {
         ownerUserId: req.userId,
         ownerEmail: undefined,
         ownerName: undefined,
+        prizeAmount: req.prizeAmount ?? 50,
         anchorLat: req.anchorLat ?? undefined,
         anchorLng: req.anchorLng ?? undefined,
         note: req.note,
@@ -137,14 +208,19 @@ export class DewanyahService {
       ownerName?: string;
       ownerEmail?: string;
       note?: string;
+      prizeAmount?: number;
       imageUrl?: string;
       themePrimary?: string;
       themeAccent?: string;
     },
   ) {
+    const updates: any = { ...data };
+    if (data.prizeAmount !== undefined) {
+      updates.prizeAmount = this.normalizePrizeAmount(data.prizeAmount) ?? 0;
+    }
     return this.prisma.dewanyah.update({
       where: { id },
-      data,
+      data: updates,
     });
   }
 
@@ -182,7 +258,14 @@ export class DewanyahService {
     });
     if (!dew) throw new Error('Dewanyah not found');
     const status = dew.requireApproval ? 'pending' : 'approved';
-    return this.prisma.dewanyahMember.upsert({
+    const existing = await this.prisma.dewanyahMember.findUnique({
+      where: {
+        dewanyahId_userId: { dewanyahId, userId },
+      },
+      select: { status: true },
+    });
+
+    const member = await this.prisma.dewanyahMember.upsert({
       where: {
         dewanyahId_userId: { dewanyahId, userId },
       },
@@ -194,6 +277,26 @@ export class DewanyahService {
         approvedAt: status === 'approved' ? new Date() : null,
       },
     });
+
+    const becamePending = status === 'pending' && existing?.status !== 'pending';
+    if (becamePending && dew.ownerUserId && dew.ownerUserId !== userId) {
+      const requester = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true, email: true },
+      });
+      const requesterName =
+        requester?.displayName?.trim() ||
+        requester?.email?.trim() ||
+        'لاعب';
+      void this.notifyDewanyahOwnerJoinRequest({
+        ownerUserId: dew.ownerUserId,
+        dewanyahId,
+        dewanyahName: dew.name ?? 'ديوانية',
+        requesterName,
+      });
+    }
+
+    return member;
   }
 
   async listPendingJoinRequestsForOwner(ownerUserId: string) {
@@ -270,26 +373,66 @@ export class DewanyahService {
     });
   }
 
-  async leaderboard(dewanyahId: string, limit = 100) {
+  async leaderboard(dewanyahId: string, limit = 100, gameId?: string) {
     const n = Math.max(1, Math.min(100, limit));
+    const dew = await this.prisma.dewanyah.findUnique({
+      where: { id: dewanyahId },
+      select: {
+        games: {
+          select: { gameId: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!dew) throw new Error('Dewanyah not found');
+
+    const gameIds = dew.games.map((g) => g.gameId).filter((g) => g.length > 0);
+    const selectedGameId =
+      gameId && gameIds.includes(gameId)
+        ? gameId
+        : (gameIds[0] ?? null);
+
     const members = await this.prisma.dewanyahMember.findMany({
-      where: { dewanyahId, status: 'approved', user: { hideFromLeaderboard: false } },
-      orderBy: { approvedAt: 'desc' },
-      take: n,
+      where: {
+        dewanyahId,
+        status: 'approved',
+        user: { hideFromLeaderboard: false },
+      },
       include: {
         user: {
           select: { id: true, displayName: true, email: true, pearls: true },
         },
       },
     });
-    return members.map((m) => ({
+
+    const userIds = members.map((m) => m.userId);
+    const walletMap = new Map<string, number>();
+    if (selectedGameId && userIds.length > 0) {
+      const wallets = await this.prisma.dewanyahGameWallet.findMany({
+        where: { dewanyahId, gameId: selectedGameId, userId: { in: userIds } },
+        select: { userId: true, pearls: true },
+      });
+      for (const w of wallets) walletMap.set(w.userId, w.pearls ?? 0);
+    }
+
+    const rows = members.map((m) => ({
       userId: m.userId,
       displayName: m.user?.displayName ?? 'لاعب',
       email: m.user?.email,
-      pearls: m.user?.pearls ?? 0,
+      pearls:
+        walletMap.get(m.userId) ??
+        (selectedGameId ? 5 : (m.user?.pearls ?? 5)),
       status: m.status,
       joinedAt: m.createdAt,
     }));
+
+    rows.sort((a, b) => {
+      const p = (b.pearls ?? 0) - (a.pearls ?? 0);
+      if (p != 0) return p;
+      return new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
+    });
+
+    return rows.slice(0, n);
   }
 
   // Admin: create dewanyah directly
@@ -299,6 +442,7 @@ export class DewanyahService {
     ownerEmail?: string;
     ownerUserId?: string;
     note?: string;
+    prizeAmount?: number;
     gameId: string;
     requireApproval?: boolean;
     locationLock?: boolean;
@@ -315,6 +459,7 @@ export class DewanyahService {
       ownerEmail,
       ownerUserId,
       note,
+      prizeAmount,
       gameId,
       requireApproval,
       locationLock,
@@ -338,6 +483,7 @@ export class DewanyahService {
       ownerName,
       ownerEmail,
       ownerUserId: fallbackOwner,
+      prizeAmount: this.normalizePrizeAmount(prizeAmount) ?? 50,
       anchorLat: anchorLat ?? undefined,
       anchorLng: anchorLng ?? undefined,
       note,

@@ -12,6 +12,10 @@ export class CreateRoomDto {
   sponsorCode?: string;
 
   @IsOptional()
+  @IsString()
+  dewanyahId?: string;
+
+  @IsOptional()
   @IsNumber()
   lat?: number;
 

@@ -15,6 +15,9 @@ import {
   getSponsorPearls,
   incSponsorPearls,
   decSponsorPearls,
+  getDewanyahPearls,
+  incDewanyahPearls,
+  decDewanyahPearls,
 } from '../common/pearls';
 import { MatchesService } from '../matches/matches.service';
 
@@ -114,16 +117,57 @@ export class RoomsService {
     gameId: string,
     hostId: string,
     sponsorCode?: string,
+    dewanyahId?: string,
     lat?: number,
     lng?: number,
     radiusMeters?: number,
   ) {
+    if (sponsorCode && dewanyahId) {
+      throw new BadRequestException('SPONSOR_AND_DEWANYAH_CONFLICT');
+    }
+
     // ensure game exists
     await this.prisma.game.upsert({
       where: { id: gameId },
       update: {},
       create: { id: gameId, name: gameId, category: 'عام' },
     });
+
+    if (dewanyahId) {
+      const dew = await this.prisma.dewanyah.findUnique({
+        where: { id: dewanyahId },
+        select: {
+          id: true,
+          status: true,
+          ownerUserId: true,
+          games: { select: { gameId: true } },
+        },
+      });
+      if (!dew || dew.status !== 'active') {
+        throw new NotFoundException('DEWANYAH_NOT_FOUND');
+      }
+
+      const isOwner = dew.ownerUserId === hostId;
+      if (!isOwner) {
+        const member = await this.prisma.dewanyahMember.findUnique({
+          where: {
+            dewanyahId_userId: {
+              dewanyahId,
+              userId: hostId,
+            },
+          },
+          select: { status: true },
+        });
+        if (member?.status !== 'approved') {
+          throw new ForbiddenException('DEWANYAH_MEMBERS_ONLY');
+        }
+      }
+
+      const allowedGames = (dew.games ?? []).map((g) => g.gameId);
+      if (allowedGames.length > 0 && !allowedGames.includes(gameId)) {
+        throw new BadRequestException('GAME_NOT_IN_DEWANYAH');
+      }
+    }
 
     // unique code
     let code = this.newCode();
@@ -145,6 +189,7 @@ export class RoomsService {
           status: 'waiting',
           allowZeroCredit: true,
           ...(sponsorCode ? { sponsorCode } : {}),
+          ...(dewanyahId ? { dewanyahId } : {}),
           players: { create: { userId: hostId } },
           stakes: { create: { userId: hostId, amount: hostStake } },
         } as any,
@@ -173,7 +218,11 @@ export class RoomsService {
           roomCode: code,
           gameId,
           userId: hostId,
-          meta: { stake: hostStake, sponsorCode: sponsorCode ?? null },
+          meta: {
+            stake: hostStake,
+            sponsorCode: sponsorCode ?? null,
+            dewanyahId: dewanyahId ?? null,
+          },
         },
       });
 
@@ -230,6 +279,28 @@ export class RoomsService {
     }
     if (this.isLocked(room)) {
       throw new BadRequestException('ROOM_LOCKED');
+    }
+
+    if (room.dewanyahId) {
+      const dew = await this.prisma.dewanyah.findUnique({
+        where: { id: room.dewanyahId },
+        select: { ownerUserId: true },
+      });
+      if (!dew) throw new NotFoundException('DEWANYAH_NOT_FOUND');
+      if (dew.ownerUserId !== userId) {
+        const member = await this.prisma.dewanyahMember.findUnique({
+          where: {
+            dewanyahId_userId: {
+              dewanyahId: room.dewanyahId,
+              userId,
+            },
+          },
+          select: { status: true },
+        });
+        if (member?.status !== 'approved') {
+          throw new ForbiddenException('DEWANYAH_JOIN_APPROVAL_REQUIRED');
+        }
+      }
     }
 
     // تحقق القرب (إن توفر موقع المضيف)
@@ -391,6 +462,7 @@ export class RoomsService {
       throw new BadRequestException('STAKE_ONLY_BEFORE_START');
 
     const sponsorCode: string | null = (room as any)?.sponsorCode ?? null;
+    const dewanyahId: string | null = (room as any)?.dewanyahId ?? null;
 
     await this.prisma.$transaction(async (tx) => {
       // refund old stake
@@ -407,6 +479,14 @@ export class RoomsService {
             room.gameId,
             old.amount,
           );
+        else if (dewanyahId)
+          await incDewanyahPearls(
+            tx,
+            userId,
+            dewanyahId,
+            room.gameId,
+            old.amount,
+          );
         else await incGamePearls(tx, userId, room.gameId, old.amount);
 
         await tx.roomStake.delete({
@@ -420,6 +500,12 @@ export class RoomsService {
         if (p < amount)
           throw new BadRequestException('NOT_ENOUGH_PEARLS_SPONSOR');
         await decSponsorPearls(tx, userId, sponsorCode, room.gameId, amount);
+      } else if (dewanyahId) {
+        const p = await getDewanyahPearls(tx, userId, dewanyahId, room.gameId);
+        if (p < amount)
+          throw new BadRequestException('NOT_ENOUGH_PEARLS_DEWANYAH');
+        if (amount > 0)
+          await decDewanyahPearls(tx, userId, dewanyahId, room.gameId, amount);
       } else {
         const p = await getGamePearls(tx, userId, room.gameId);
         if (p < amount) throw new BadRequestException('NOT_ENOUGH_PEARLS');
@@ -435,7 +521,7 @@ export class RoomsService {
           kind: 'STAKE_SET',
           roomCode: code,
           userId,
-          meta: { amount, sponsorCode },
+          meta: { amount, sponsorCode, dewanyahId },
         },
       });
     });

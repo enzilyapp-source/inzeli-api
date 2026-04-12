@@ -247,3 +247,78 @@ export async function decSponsorPearls(
     data: { pearls: { decrement: amount }, seasonYm: nowYm } as any,
   });
 }
+
+// -------------------- DEWANYAH (DewanyahGameWallet.pearls) --------------------
+export async function getDewanyahPearls(
+  tx: TxLike,
+  userId: string,
+  dewanyahId: string,
+  gameId: string,
+): Promise<number> {
+  const client = tx as any;
+  const nowYm = seasonYm();
+
+  const w = await client.dewanyahGameWallet.upsert({
+    where: { userId_dewanyahId_gameId: { userId, dewanyahId, gameId } },
+    update: {} as any,
+    create: {
+      userId,
+      dewanyahId,
+      gameId,
+      pearls: SEASON_START_PEARLS,
+      seasonYm: nowYm,
+    } as any,
+    select: { pearls: true, seasonYm: true } as any,
+  });
+
+  const currentYm = (w?.seasonYm ?? 0) as number;
+  if (currentYm !== nowYm) {
+    const updated = await client.dewanyahGameWallet.update({
+      where: { userId_dewanyahId_gameId: { userId, dewanyahId, gameId } },
+      data: { pearls: SEASON_START_PEARLS, seasonYm: nowYm } as any,
+      select: { pearls: true } as any,
+    });
+    return (updated?.pearls ?? 0) as number;
+  }
+
+  return (w?.pearls ?? 0) as number;
+}
+
+export async function incDewanyahPearls(
+  tx: TxLike,
+  userId: string,
+  dewanyahId: string,
+  gameId: string,
+  amount = 1,
+) {
+  if (amount <= 0) return;
+  const client = tx as any;
+  const nowYm = seasonYm();
+
+  await getDewanyahPearls(tx, userId, dewanyahId, gameId);
+
+  await client.dewanyahGameWallet.update({
+    where: { userId_dewanyahId_gameId: { userId, dewanyahId, gameId } },
+    data: { pearls: { increment: amount }, seasonYm: nowYm } as any,
+  });
+}
+
+export async function decDewanyahPearls(
+  tx: TxLike,
+  userId: string,
+  dewanyahId: string,
+  gameId: string,
+  amount = 1,
+) {
+  if (amount <= 0) return;
+  const client = tx as any;
+  const nowYm = seasonYm();
+
+  const current = await getDewanyahPearls(tx, userId, dewanyahId, gameId);
+  if (current < amount) throw new Error('NOT_ENOUGH_PEARLS_DEWANYAH');
+
+  await client.dewanyahGameWallet.update({
+    where: { userId_dewanyahId_gameId: { userId, dewanyahId, gameId } },
+    data: { pearls: { decrement: amount }, seasonYm: nowYm } as any,
+  });
+}

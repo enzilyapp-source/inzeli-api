@@ -35,6 +35,7 @@ export class RoomsController {
           dto.gameId,
           hostId,
           dto.sponsorCode,
+          dto.dewanyahId,
           dto.lat,
           dto.lng,
           dto.radiusMeters,

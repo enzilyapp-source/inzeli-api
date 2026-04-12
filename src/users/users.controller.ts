@@ -58,6 +58,7 @@ export class UsersController {
         await tx.userGameStat.deleteMany({ where: { userId } });
         await tx.userGameWallet.deleteMany({ where: { userId } });
         await tx.sponsorGameWallet.deleteMany({ where: { userId } });
+        await tx.dewanyahGameWallet.deleteMany({ where: { userId } });
         await tx.sponsorGameStat.deleteMany({ where: { userId } });
 
         // Finally, delete the user

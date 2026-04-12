@@ -17,6 +17,7 @@ model Game {
   SponsorGame       SponsorGame[]
   SponsorGameStat   SponsorGameStat[]
   SponsorGameWallet SponsorGameWallet[]
+  DewanyahGameWallet DewanyahGameWallet[]
   TimelineEvent     TimelineEvent[]
   UserGameStat      UserGameStat[]
   UserGameWallet    UserGameWallet[]
@@ -46,6 +47,7 @@ model User {
   avatarPath        String?
   DewanyahMember    DewanyahMember[]
   DewanyahRequest   DewanyahRequest[]
+  DewanyahGameWallet DewanyahGameWallet[]
   matchParts        MatchParticipant[]
   roomsHosted       Room[]              @relation("RoomsHosted")
   roomPlayers       RoomPlayer[]
@@ -103,6 +105,7 @@ model Room {
   gameId            String
   hostUserId        String
   sponsorCode       String?
+  dewanyahId        String?
   status            String           @default("waiting")
   createdAt         DateTime         @default(now())
   targetWinPoints   Int?
@@ -120,10 +123,13 @@ model Room {
   game              Game             @relation(fields: [gameId], references: [id])
   host              User             @relation("RoomsHosted", fields: [hostUserId], references: [id])
   sponsor           Sponsor?         @relation("SponsorRooms", fields: [sponsorCode], references: [code])
+  dewanyah          Dewanyah?        @relation(fields: [dewanyahId], references: [id], onDelete: SetNull)
   players           RoomPlayer[]
   resultVotes       RoomResultVote[]
   stakes            RoomStake[]
   TimelineEvent     TimelineEvent[]
+
+  @@index([dewanyahId])
 }
 
 model RoomPlayer {
@@ -300,6 +306,7 @@ model Dewanyah {
   ownerUserId     String
   ownerEmail      String?
   ownerName       String?
+  prizeAmount     Int              @default(50)
   anchorLat       Float?
   anchorLng       Float?
   imageUrl        String?
@@ -314,6 +321,24 @@ model Dewanyah {
   updatedAt       DateTime         @updatedAt
   games           DewanyahGame[]
   members         DewanyahMember[]
+  rooms           Room[]
+  wallets         DewanyahGameWallet[]
+}
+
+model DewanyahGameWallet {
+  userId      String
+  dewanyahId  String
+  gameId      String
+  pearls      Int      @default(5)
+  seasonYm    Int?
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dewanyah    Dewanyah @relation(fields: [dewanyahId], references: [id], onDelete: Cascade)
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@id([userId, dewanyahId, gameId])
+  @@index([dewanyahId, gameId])
+  @@index([userId])
 }
 
 model DewanyahGame {
@@ -349,6 +374,7 @@ model DewanyahRequest {
   contact         String
   gameId          String?
   note            String?
+  prizeAmount     Int?
   anchorLat       Float?
   anchorLng       Float?
   requireApproval Boolean   @default(true)
