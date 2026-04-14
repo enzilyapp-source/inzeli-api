@@ -4,6 +4,8 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { Prisma, $Enums } from '@prisma/client';
@@ -46,11 +48,189 @@ function haversineMeters(
 }
 
 @Injectable()
-export class RoomsService {
+export class RoomsService implements OnModuleInit, OnModuleDestroy {
+  private reminderTicker?: NodeJS.Timeout;
+  private readonly lastReminderAt = new Map<string, number>();
+  private static readonly REMINDER_SCAN_MS = 60 * 1000;
+  private static readonly REMINDER_INTERVAL_MS = 3 * 60 * 1000;
+  private static readonly REMINDER_LINES = [
+    'للحينكم تلعبون؟',
+    'شلون اللعب؟',
+    'شالأخبار؟',
+    'وين واصلين؟',
+    'النتيجة للحين ما انحسمت 👀',
+  ];
+
   constructor(
     private prisma: PrismaService,
     private matches: MatchesService,
   ) {}
+
+  onModuleInit() {
+    // Background reminder loop (best-effort): nudges players/host to finish stale rooms.
+    this.reminderTicker = setInterval(() => {
+      void this.sweepResultReminders();
+    }, RoomsService.REMINDER_SCAN_MS);
+    this.reminderTicker.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.reminderTicker) clearInterval(this.reminderTicker);
+    this.reminderTicker = undefined;
+  }
+
+  private get oneSignalAppId() {
+    return (process.env.ONESIGNAL_APP_ID ?? '').trim();
+  }
+
+  private get oneSignalApiKey() {
+    return (process.env.ONESIGNAL_REST_API_KEY ?? '').trim();
+  }
+
+  private randomReminderLine() {
+    const list = RoomsService.REMINDER_LINES;
+    return list[Math.floor(Math.random() * list.length)] ?? 'تم تذكيركم بحسم النتيجة';
+  }
+
+  private async sendPushReminder(params: {
+    recipients: string[];
+    headingAr: string;
+    contentAr: string;
+    data: Record<string, any>;
+  }) {
+    const appId = this.oneSignalAppId;
+    const apiKey = this.oneSignalApiKey;
+    if (!appId || !apiKey) return false;
+
+    const recipients = params.recipients
+      .map((x) => (x ?? '').trim())
+      .filter((x) => x.length > 0);
+    if (!recipients.length) return false;
+
+    const payload = {
+      app_id: appId,
+      include_external_user_ids: recipients,
+      channel_for_external_user_ids: 'push',
+      headings: { ar: params.headingAr, en: 'Match reminder' },
+      contents: { ar: params.contentAr, en: 'Please complete the match result.' },
+      data: params.data,
+      ios_badgeType: 'Increase',
+      ios_badgeCount: 1,
+    };
+
+    try {
+      const res = await fetch('https://onesignal.com/api/v1/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Key ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const raw = await res.text();
+        console.warn(
+          `OneSignal room reminder failed (${res.status}): ${raw.slice(0, 300)}`,
+        );
+        return false;
+      }
+      return true;
+    } catch (e: any) {
+      console.warn(`OneSignal room reminder error: ${e?.message || e}`);
+      return false;
+    }
+  }
+
+  private async sweepResultReminders() {
+    const appId = this.oneSignalAppId;
+    const apiKey = this.oneSignalApiKey;
+    if (!appId || !apiKey) return;
+
+    const now = Date.now();
+    const running = await this.prisma.room.findMany({
+      where: {
+        status: 'running',
+        startedAt: { not: null },
+        timerSec: { not: null },
+      },
+      select: {
+        code: true,
+        gameId: true,
+        hostUserId: true,
+        startedAt: true,
+        timerSec: true,
+        resultStatus: true,
+        players: { select: { userId: true } },
+        resultVotes: { select: { userId: true, approve: true } },
+      },
+      take: 200,
+    });
+
+    const activeCodes = new Set(running.map((r) => r.code));
+    for (const code of Array.from(this.lastReminderAt.keys())) {
+      if (!activeCodes.has(code)) this.lastReminderAt.delete(code);
+    }
+
+    for (const room of running) {
+      const startMs = room.startedAt?.getTime() ?? 0;
+      const sec = room.timerSec ?? 0;
+      if (!startMs || sec <= 0) continue;
+      const endMs = startMs + sec * 1000;
+      if (now < endMs) continue;
+
+      if (room.resultStatus === $Enums.RoomResultStatus.approved) continue;
+
+      const lastAt = this.lastReminderAt.get(room.code) ?? 0;
+      if (now - lastAt < RoomsService.REMINDER_INTERVAL_MS) continue;
+
+      let recipients: string[] = [];
+      let headingAr = 'تذكير بحسم النتيجة';
+      let contentAr = `${this.randomReminderLine()} انتهى الوقت، حدّدوا النتيجة الآن.`;
+
+      if (room.resultStatus === $Enums.RoomResultStatus.pending) {
+        const approvedIds = new Set(
+          room.resultVotes.filter((v) => v.approve).map((v) => v.userId),
+        );
+        recipients = room.players
+          .map((p) => p.userId)
+          .filter((uid) => !approvedIds.has(uid));
+        headingAr = 'بانتظار موافقتكم على النتيجة';
+        contentAr = `${this.randomReminderLine()} يرجى فتح الروم واعتماد النتيجة.`;
+      } else {
+        // waiting/rejected: host needs to submit/re-submit result.
+        recipients = [room.hostUserId];
+        headingAr = 'المضيف: حسم النتيجة مطلوب';
+        contentAr = `${this.randomReminderLine()} انتهى العداد في ${room.gameId}.`;
+      }
+
+      const sent = await this.sendPushReminder({
+        recipients,
+        headingAr,
+        contentAr,
+        data: {
+          type: 'room_result_reminder',
+          roomCode: room.code,
+          gameId: room.gameId,
+          resultStatus: room.resultStatus,
+        },
+      });
+      if (!sent) continue;
+
+      this.lastReminderAt.set(room.code, now);
+      await this.prisma.timelineEvent.create({
+        data: {
+          kind: 'ROOM_RESULT_REMINDER',
+          roomCode: room.code,
+          gameId: room.gameId,
+          userId: recipients[0] ?? null,
+          meta: {
+            recipientsCount: recipients.length,
+            resultStatus: room.resultStatus,
+          },
+        },
+      });
+    }
+  }
 
   // ---------- helpers ----------
   private newCode(): string {
