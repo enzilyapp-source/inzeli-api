@@ -36,9 +36,38 @@ export class TimelineController {
         take: n,
       });
 
+      const filteredEvents = scopeAll
+        ? events.filter((e) => {
+            const k = (e.kind ?? '').toUpperCase();
+            // في الفيد العام نعرض أحداث النتيجة النهائية فقط،
+            // ونخفي الأحداث الفردية حتى لا تتكرر نفس المباراة أكثر من مرة.
+            if (k === 'MATCH_WIN' || k === 'MATCH_LOSS') return false;
+            // تذكيرات الحسم لا نعرضها في شسالفه العام.
+            if (k === 'ROOM_RESULT_REMINDER') return false;
+            return true;
+          })
+        : events;
+
+      const dedupedEvents = scopeAll
+        ? (() => {
+            const seenRoomResult = new Set<string>();
+            const out: typeof filteredEvents = [];
+            for (const e of filteredEvents) {
+              const k = (e.kind ?? '').toUpperCase();
+              if (k.startsWith('MATCH') && e.roomCode) {
+                const key = `${e.roomCode}|${e.gameId ?? ''}`;
+                if (seenRoomResult.has(key)) continue;
+                seenRoomResult.add(key);
+              }
+              out.push(e);
+            }
+            return out;
+          })()
+        : filteredEvents;
+
       // resolve user names (winner/losers/userId) for display
       const ids = new Set<string>();
-      events.forEach((e) => {
+      dedupedEvents.forEach((e) => {
         if (e.userId) ids.add(e.userId);
         const meta: any = e.meta;
         if (Array.isArray(meta?.winners)) meta.winners.forEach((w: any) => w && ids.add(String(w)));
@@ -55,7 +84,7 @@ export class TimelineController {
 
       return ok(
         'Timeline',
-        events.map((e) => ({
+        dedupedEvents.map((e) => ({
           id: e.id,
           userId: e.userId,
           roomCode: e.roomCode,
