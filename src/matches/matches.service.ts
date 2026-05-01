@@ -17,6 +17,11 @@ import {
   decSponsorPearls,
   decDewanyahPearls,
 } from '../common/pearls';
+import {
+  awardBadgesForBalance,
+  badgeContext,
+  seasonYm,
+} from '../common/badges';
 
 @Injectable()
 export class MatchesService {
@@ -107,6 +112,31 @@ export class MatchesService {
         const dewanyahId: string | null =
           ((latestRoom as any)?.dewanyahId as string | null) ?? null;
         const game = latestRoom!.gameId;
+        const context = badgeContext({
+          gameId: game,
+          sponsorCode: sc,
+          dewanyahId,
+        });
+        const badgeSeason = seasonYm(match.createdAt);
+        const participants = Array.from(new Set([...winners, ...losers]));
+
+        const readPearls = async (userId: string) => {
+          if (sc) return getSponsorPearls(tx, userId, sc, game);
+          if (dewanyahId)
+            return getDewanyahPearls(tx, userId, dewanyahId, game);
+          return getGamePearls(tx, userId, game);
+        };
+
+        for (const userId of participants) {
+          const balance = await readPearls(userId);
+          await awardBadgesForBalance(tx, {
+            userId,
+            balance,
+            seasonYm: badgeSeason,
+            earnedAt: match.createdAt,
+            context,
+          });
+        }
 
         // خصم 1 لؤلؤة من كل خاسر (إذا عنده)، وجمعها
         let pot = 0;
@@ -149,6 +179,17 @@ export class MatchesService {
               else await incGamePearls(tx, winners[i], game, inc);
             }
           }
+        }
+
+        for (const userId of winners) {
+          const balance = await readPearls(userId);
+          await awardBadgesForBalance(tx, {
+            userId,
+            balance,
+            seasonYm: badgeSeason,
+            earnedAt: match.createdAt,
+            context,
+          });
         }
       }
 

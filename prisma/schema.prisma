@@ -48,6 +48,8 @@ model User {
   DewanyahMember    DewanyahMember[]
   DewanyahRequest   DewanyahRequest[]
   DewanyahGameWallet DewanyahGameWallet[]
+  badges            UserBadge[]
+  badgeAwards       UserBadgeAward[]
   matchParts        MatchParticipant[]
   roomsHosted       Room[]              @relation("RoomsHosted")
   roomPlayers       RoomPlayer[]
@@ -98,6 +100,46 @@ model UserItem {
 
   @@id([userId, itemId])
   @@index([userId])
+}
+
+model UserBadge {
+  id            String     @id @default(cuid())
+  userId        String
+  label         String
+  threshold     Int
+  scope         BadgeScope @default(GENERAL)
+  contextKey    String
+  gameId        String?
+  sponsorCode   String?
+  dewanyahId    String?
+  count         Int        @default(0)
+  firstEarnedAt DateTime   @default(now())
+  lastEarnedAt  DateTime   @default(now())
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scope, contextKey, label])
+  @@index([userId])
+  @@index([scope, contextKey])
+}
+
+model UserBadgeAward {
+  id          String     @id @default(cuid())
+  userId      String
+  label       String
+  threshold   Int
+  scope       BadgeScope @default(GENERAL)
+  contextKey  String
+  gameId      String?
+  sponsorCode String?
+  dewanyahId  String?
+  seasonYm    Int
+  earnedAt    DateTime   @default(now())
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scope, contextKey, label, seasonYm])
+  @@index([userId])
+  @@index([seasonYm])
+  @@index([scope, contextKey])
 }
 
 model Room {
@@ -393,6 +435,12 @@ enum StoreKind {
   theme
   frame
   card
+}
+
+enum BadgeScope {
+  GENERAL
+  SPONSOR
+  DEWANYAH
 }
 
 enum TeamSide {

@@ -12,6 +12,7 @@ import { LoginDto } from './dto/login.dto';
 import { RequestRegisterOtpDto } from './dto/request-register-otp.dto';
 import { VerifyRegisterOtpDto } from './dto/verify-register-otp.dto';
 import { ensureAllGameWallets } from '../common/pearls';
+import { badgeSnapshot } from '../common/badges';
 import { createHmac, randomInt } from 'crypto';
 
 const REGISTER_OTP_PURPOSE = 'register';
@@ -179,7 +180,13 @@ export class AuthService {
   // نحول المستخدم لشكل آمن ومتوافق مع Flutter
   private toSafeUser(
     user: any,
-    extras?: { pearls?: number; gamePearls?: Record<string, number> },
+    extras?: {
+      pearls?: number;
+      gamePearls?: Record<string, number>;
+      badges?: any[];
+      badgeCounts?: Record<string, number>;
+      bestBadge?: any;
+    },
   ) {
     const pearls = extras?.pearls ?? user.pearls ?? user.creditPoints ?? 0;
     return {
@@ -201,6 +208,9 @@ export class AuthService {
       avatarBase64: user.avatarBase64 ?? null,
       avatarPath: user.avatarPath ?? null,
       ...(extras?.gamePearls ? { gamePearls: extras.gamePearls } : {}),
+      ...(extras?.badges ? { badges: extras.badges } : {}),
+      ...(extras?.badgeCounts ? { badgeCounts: extras.badgeCounts } : {}),
+      ...(extras?.bestBadge ? { bestBadge: extras.bestBadge } : {}),
     };
   }
 
@@ -208,7 +218,8 @@ export class AuthService {
     const gamePearls = await ensureAllGameWallets(this.prisma, userId);
     const values = Object.values(gamePearls ?? {});
     const pearls = values.length ? Math.max(...values) : 0;
-    return { pearls, gamePearls };
+    const badges = await badgeSnapshot(this.prisma, userId);
+    return { pearls, gamePearls, ...badges };
   }
 
   private async assertEmailPhoneAvailable(email: string, phone: string) {

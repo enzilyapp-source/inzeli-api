@@ -15,6 +15,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../prisma.service';
 import { ok, err } from '../common/api';
 import { ensureAllGameWallets, getPearls } from '../common/pearls';
+import { badgeSnapshot } from '../common/badges';
 import { Prisma } from '@prisma/client';
 
 @Controller('users')
@@ -87,12 +88,14 @@ export class UsersController {
 
       const gamePearls = await ensureAllGameWallets(this.prisma, userId);
       const pearls = await getPearls(this.prisma, userId);
+      const badges = await badgeSnapshot(this.prisma, userId);
 
       return ok('Me', {
         ...user,
         pearls,
         gamePearls,
         creditPoints: pearls, // optional for old flutter UI
+        ...badges,
       });
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);
@@ -171,7 +174,17 @@ export class UsersController {
       where: { OR: [{ id: { in: ids } }, { publicId: { in: ids } }] },
       select: this._publicUserSelect,
     });
-    return ok('Users', users);
+    const snapshots = new Map(
+      await Promise.all(
+        users.map(
+          async (u) => [u.id, await badgeSnapshot(this.prisma, u.id)] as const,
+        ),
+      ),
+    );
+    return ok(
+      'Users',
+      users.map((u) => ({ ...u, ...(snapshots.get(u.id) ?? {}) })),
+    );
   }
 
   @Get('search/:q')
@@ -192,7 +205,17 @@ export class UsersController {
       select: this._publicUserSelect,
       orderBy: { createdAt: 'desc' },
     });
-    return ok('Users', users);
+    const snapshots = new Map(
+      await Promise.all(
+        users.map(
+          async (u) => [u.id, await badgeSnapshot(this.prisma, u.id)] as const,
+        ),
+      ),
+    );
+    return ok(
+      'Users',
+      users.map((u) => ({ ...u, ...(snapshots.get(u.id) ?? {}) })),
+    );
   }
 
   @Get(':id/stats')
@@ -223,6 +246,7 @@ export class UsersController {
 
       const gamePearls = await ensureAllGameWallets(this.prisma, id);
       const pearls = await getPearls(this.prisma, id);
+      const badges = await badgeSnapshot(this.prisma, id);
 
       return ok('Stats', {
         userId: id,
@@ -237,6 +261,7 @@ export class UsersController {
         pearls,
         gamePearls,
         creditPoints: pearls,
+        ...badges,
       });
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);

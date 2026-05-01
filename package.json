@@ -18,6 +18,7 @@
     "seed:sponsor": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed-sponsor.ts",
     "seed:test-users": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed-test-users.ts",
     "reset:pearls": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/reset-pearls.ts",
+    "restore:badges": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/restore-badges.ts",
     "delete:user": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/delete-user-by-email.ts",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
