@@ -15,7 +15,7 @@
     "baseUrl": "./",
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "types": ["node"],
+    "types": ["node", "jest"],
     "skipLibCheck": true,
     "incremental": true
   },

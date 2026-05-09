@@ -42,6 +42,28 @@ TWILIO_AUTH_TOKEN=...
 TWILIO_FROM_NUMBER=+1XXXXXXXXXX
 ```
 
+Optional WhatsApp OTP fallback:
+
+```bash
+# Approved Twilio WhatsApp sender, e.g. whatsapp:+14155238886 or +14155238886
+TWILIO_WHATSAPP_FROM=whatsapp:+1XXXXXXXXXX
+
+# Recommended for production: approved WhatsApp authentication Content Template SID
+TWILIO_WHATSAPP_CONTENT_SID=HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Optional template variables JSON. {{CODE}} is replaced at send time.
+# Default is {"1":"<otp>"} for one-variable authentication templates.
+TWILIO_WHATSAPP_CONTENT_VARIABLES={"1":"{{CODE}}"}
+
+# For sandbox/testing only. Production business-initiated WhatsApp OTP should use a template.
+TWILIO_WHATSAPP_ALLOW_FREEFORM=false
+
+# Enables delayed fallback when Twilio later marks SMS failed/undelivered.
+# Use your public API domain; route is POST /api/auth/otp/status.
+PUBLIC_API_BASE_URL=https://api.enzily.app
+TWILIO_STATUS_CALLBACK_SECRET=change-me
+```
+
 Optional controls:
 
 ```bash
@@ -53,6 +75,9 @@ AUTH_OTP_MAX_ATTEMPTS=5
 
 # Min seconds between OTP sends per phone (default: 45)
 AUTH_OTP_RATE_WINDOW_SEC=45
+
+# JWT lifetime for mobile sessions (default: 365d)
+JWT_EXPIRES_IN=365d
 
 # Optional hardening for old users:
 # if true, login rejects non-test users without verified phone

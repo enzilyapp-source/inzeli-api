@@ -11,11 +11,14 @@ import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto';
 import { RequestRegisterOtpDto } from './dto/request-register-otp.dto';
 import { VerifyRegisterOtpDto } from './dto/verify-register-otp.dto';
+import { RequestPasswordResetOtpDto } from './dto/request-password-reset-otp.dto';
+import { ResetPasswordWithOtpDto } from './dto/reset-password-with-otp.dto';
 import { ensureAllGameWallets } from '../common/pearls';
 import { badgeSnapshot } from '../common/badges';
 import { createHmac, randomInt } from 'crypto';
 
 const REGISTER_OTP_PURPOSE = 'register';
+const PASSWORD_RESET_OTP_PURPOSE = 'password_reset';
 
 type RegisterOtpPayload = {
   email: string;
@@ -23,6 +26,14 @@ type RegisterOtpPayload = {
   phone: string;
   passwordHash: string;
   birthDate?: string;
+};
+
+type OtpDeliveryChannel = 'sms' | 'whatsapp';
+
+type OtpSendResult = {
+  channel: OtpDeliveryChannel;
+  sid?: string;
+  status?: string;
 };
 
 function isBcryptHash(s: string) {
@@ -142,39 +153,187 @@ export class AuthService {
     return byEmail || byPhone;
   }
 
-  private async sendOtpSms(phone: string, code: string) {
+  private twilioCredentials() {
     const sid = process.env.TWILIO_ACCOUNT_SID;
     const token = process.env.TWILIO_AUTH_TOKEN;
-    const from = process.env.TWILIO_FROM_NUMBER;
-
-    if (!sid || !token || !from) {
+    if (!sid || !token) {
       throw new BadRequestException('OTP_PROVIDER_NOT_CONFIGURED');
     }
+    return { sid, token };
+  }
 
-    const minutes = Math.max(1, Math.round(this.otpTtlSec() / 60));
-    const body = `Inzeli verification code: ${code}. Valid for ${minutes} minute(s).`;
+  private twilioStatusCallbackUrl() {
+    const explicit = process.env.TWILIO_STATUS_CALLBACK_URL?.trim();
+    if (explicit) return explicit;
 
+    const publicBase = (
+      process.env.PUBLIC_API_BASE_URL ||
+      process.env.API_PUBLIC_BASE_URL ||
+      ''
+    ).trim();
+    if (!publicBase) return undefined;
+
+    const base = publicBase.replace(/\/+$/, '');
+    const url = `${base}/api/auth/otp/status`;
+    const secret = process.env.TWILIO_STATUS_CALLBACK_SECRET?.trim();
+    return secret ? `${url}?secret=${encodeURIComponent(secret)}` : url;
+  }
+
+  private whatsappFrom() {
+    const raw = process.env.TWILIO_WHATSAPP_FROM?.trim();
+    if (!raw) return '';
+    return raw.startsWith('whatsapp:') ? raw : `whatsapp:${raw}`;
+  }
+
+  private whatsappContentVariables(code: string) {
+    const raw = process.env.TWILIO_WHATSAPP_CONTENT_VARIABLES?.trim();
+    if (!raw) return { '1': code };
+    try {
+      return JSON.parse(raw.replace(/\{\{CODE\}\}/g, code)) as Record<
+        string,
+        string
+      >;
+    } catch {
+      return { '1': code };
+    }
+  }
+
+  private whatsappOtpConfigured() {
+    if (!this.whatsappFrom()) return false;
+    if (process.env.TWILIO_WHATSAPP_CONTENT_SID?.trim()) return true;
+    return process.env.TWILIO_WHATSAPP_ALLOW_FREEFORM === 'true';
+  }
+
+  private async sendTwilioMessage(
+    channel: OtpDeliveryChannel,
+    body: URLSearchParams,
+  ): Promise<OtpSendResult> {
+    const { sid, token } = this.twilioCredentials();
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
       {
         method: 'POST',
         headers: {
-          Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
+          Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString(
+            'base64',
+          )}`,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-          To: phone,
-          From: from,
-          Body: body,
-        }).toString(),
+        body: body.toString(),
       },
     );
 
+    const raw = await response.text();
+    let parsed: any = {};
+    try {
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      parsed = {};
+    }
+
     if (!response.ok) {
-      const details = await response.text();
-      console.error('OTP_SEND_FAILED', response.status, details);
+      console.error('OTP_SEND_FAILED', channel, response.status, raw);
       throw new BadRequestException('OTP_SEND_FAILED');
     }
+
+    return {
+      channel,
+      sid: typeof parsed?.sid === 'string' ? parsed.sid : undefined,
+      status: typeof parsed?.status === 'string' ? parsed.status : undefined,
+    };
+  }
+
+  private async sendOtpSms(phone: string, code: string) {
+    const from = process.env.TWILIO_FROM_NUMBER;
+    if (!from) throw new BadRequestException('OTP_PROVIDER_NOT_CONFIGURED');
+    const minutes = Math.max(1, Math.round(this.otpTtlSec() / 60));
+    const body = `Inzeli verification code: ${code}. Valid for ${minutes} minute(s).`;
+    const params = new URLSearchParams({
+      To: phone,
+      From: from,
+      Body: body,
+    });
+    const callbackUrl = this.twilioStatusCallbackUrl();
+    if (callbackUrl) params.set('StatusCallback', callbackUrl);
+
+    return this.sendTwilioMessage('sms', params);
+  }
+
+  private async sendOtpWhatsapp(phone: string, code: string) {
+    const from = this.whatsappFrom();
+    if (!from) throw new BadRequestException('OTP_WHATSAPP_NOT_CONFIGURED');
+
+    const contentSid = process.env.TWILIO_WHATSAPP_CONTENT_SID?.trim();
+    const allowFreeform = process.env.TWILIO_WHATSAPP_ALLOW_FREEFORM === 'true';
+    if (!contentSid && !allowFreeform) {
+      throw new BadRequestException('OTP_WHATSAPP_NOT_CONFIGURED');
+    }
+
+    const params = new URLSearchParams({
+      To: `whatsapp:${phone}`,
+      From: from,
+    });
+
+    if (contentSid) {
+      params.set('ContentSid', contentSid);
+      params.set(
+        'ContentVariables',
+        JSON.stringify(this.whatsappContentVariables(code)),
+      );
+    } else {
+      const minutes = Math.max(1, Math.round(this.otpTtlSec() / 60));
+      params.set(
+        'Body',
+        `Inzeli verification code: ${code}. Valid for ${minutes} minute(s).`,
+      );
+    }
+
+    const callbackUrl = this.twilioStatusCallbackUrl();
+    if (callbackUrl) params.set('StatusCallback', callbackUrl);
+
+    return this.sendTwilioMessage('whatsapp', params);
+  }
+
+  private async recordOtpDelivery(challengeId: string, result: OtpSendResult) {
+    await this.prisma.authOtpDelivery
+      .create({
+        data: {
+          challengeId,
+          channel: result.channel,
+          messageSid: result.sid,
+          status: result.status,
+        },
+      })
+      .catch((e) => console.error('OTP_DELIVERY_RECORD_FAILED', e));
+  }
+
+  private async sendOtpWithFallback(
+    phone: string,
+    code: string,
+    challengeId: string,
+  ) {
+    let smsFailed = false;
+
+    if (process.env.TWILIO_FROM_NUMBER) {
+      try {
+        const sms = await this.sendOtpSms(phone, code);
+        await this.recordOtpDelivery(challengeId, sms);
+        return sms;
+      } catch (e) {
+        smsFailed = true;
+        console.error('OTP_SMS_FAILED_TRY_WHATSAPP', e);
+      }
+    }
+
+    if (this.whatsappOtpConfigured()) {
+      const whatsapp = await this.sendOtpWhatsapp(phone, code);
+      await this.recordOtpDelivery(challengeId, whatsapp);
+      return whatsapp;
+    }
+
+    throw new BadRequestException(
+      smsFailed ? 'OTP_SEND_FAILED' : 'OTP_PROVIDER_NOT_CONFIGURED',
+    );
   }
 
   // نحول المستخدم لشكل آمن ومتوافق مع Flutter
@@ -266,6 +425,19 @@ export class AuthService {
     };
   }
 
+  private async createAuthSession(user: any) {
+    const pearlsSnapshot = await this.loadPearlsSnapshot(user.id);
+    const token = await this.jwt.signAsync({ sub: user.id, email: user.email });
+
+    return {
+      user: this.toSafeUser(
+        { ...user, pearls: pearlsSnapshot.pearls },
+        pearlsSnapshot,
+      ),
+      token,
+    };
+  }
+
   async requestRegisterOtp(dto: RequestRegisterOtpDto) {
     const email = this.normalizeEmail(dto.email);
     const phone = this.normalizePhone(dto.phone);
@@ -316,8 +488,9 @@ export class AuthService {
       select: { id: true },
     });
 
+    let delivery: OtpSendResult;
     try {
-      await this.sendOtpSms(phone, otp);
+      delivery = await this.sendOtpWithFallback(phone, otp, challenge.id);
     } catch (e) {
       await this.prisma.authOtpChallenge
         .delete({ where: { id: challenge.id } })
@@ -329,6 +502,7 @@ export class AuthService {
       otpRequired: true,
       requestId: challenge.id,
       expiresInSec: ttlSec,
+      deliveryChannel: delivery.channel,
       ...(process.env.AUTH_DEBUG_OTP === 'true' ? { debugCode: otp } : {}),
     };
   }
@@ -429,6 +603,196 @@ export class AuthService {
       ),
       token,
     };
+  }
+
+  async requestPasswordResetOtp(dto: RequestPasswordResetOtpDto) {
+    const email = this.normalizeEmail(dto.email);
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new BadRequestException('PASSWORD_RESET_NOT_FOUND');
+    if (!user.phone)
+      throw new BadRequestException('PASSWORD_RESET_PHONE_MISSING');
+
+    const rateWindowSec = this.otpRateWindowSec();
+    const recent = await this.prisma.authOtpChallenge.findFirst({
+      where: {
+        phone: user.phone,
+        purpose: PASSWORD_RESET_OTP_PURPOSE,
+        createdAt: {
+          gte: new Date(Date.now() - rateWindowSec * 1000),
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    if (recent) throw new BadRequestException('OTP_RATE_LIMIT');
+
+    const otp = this.generateOtpCode();
+    const ttlSec = this.otpTtlSec();
+    const challenge = await this.prisma.authOtpChallenge.create({
+      data: {
+        phone: user.phone,
+        purpose: PASSWORD_RESET_OTP_PURPOSE,
+        codeHash: this.hashOtp(user.phone, PASSWORD_RESET_OTP_PURPOSE, otp),
+        expiresAt: new Date(Date.now() + ttlSec * 1000),
+        maxAttempts: this.otpMaxAttempts(),
+        payload: { userId: user.id } as unknown as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    });
+
+    let delivery: OtpSendResult;
+    try {
+      delivery = await this.sendOtpWithFallback(user.phone, otp, challenge.id);
+    } catch (e) {
+      await this.prisma.authOtpChallenge
+        .delete({ where: { id: challenge.id } })
+        .catch(() => null);
+      throw e;
+    }
+
+    const last4 = user.phone.slice(-4);
+    return {
+      otpRequired: true,
+      requestId: challenge.id,
+      expiresInSec: ttlSec,
+      phoneHint: `****${last4}`,
+      deliveryChannel: delivery.channel,
+      ...(process.env.AUTH_DEBUG_OTP === 'true' ? { debugCode: otp } : {}),
+    };
+  }
+
+  async resetPasswordWithOtp(dto: ResetPasswordWithOtpDto) {
+    const challenge = await this.prisma.authOtpChallenge.findUnique({
+      where: { id: dto.requestId },
+    });
+
+    if (!challenge || challenge.purpose !== PASSWORD_RESET_OTP_PURPOSE) {
+      throw new BadRequestException('OTP_NOT_FOUND');
+    }
+    if (challenge.usedAt) throw new BadRequestException('OTP_ALREADY_USED');
+    if (challenge.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('OTP_EXPIRED');
+    }
+    if (challenge.attempts >= challenge.maxAttempts) {
+      throw new BadRequestException('OTP_TOO_MANY_ATTEMPTS');
+    }
+
+    const expectedHash = this.hashOtp(
+      challenge.phone,
+      PASSWORD_RESET_OTP_PURPOSE,
+      dto.code,
+    );
+    if (expectedHash !== challenge.codeHash) {
+      await this.prisma.authOtpChallenge.update({
+        where: { id: challenge.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new BadRequestException('OTP_INVALID');
+    }
+
+    const raw = challenge.payload as Record<string, unknown> | null;
+    const userId = typeof raw?.userId === 'string' ? raw.userId : '';
+    if (!userId)
+      throw new BadRequestException('PASSWORD_RESET_PAYLOAD_INVALID');
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const user = await this.prisma.$transaction(async (tx) => {
+      const fresh = await tx.authOtpChallenge.findUnique({
+        where: { id: challenge.id },
+      });
+      if (!fresh || fresh.usedAt) {
+        throw new BadRequestException('OTP_ALREADY_USED');
+      }
+      if (fresh.expiresAt.getTime() < Date.now()) {
+        throw new BadRequestException('OTP_EXPIRED');
+      }
+
+      await tx.authOtpChallenge.update({
+        where: { id: challenge.id },
+        data: { usedAt: new Date() },
+      });
+
+      return tx.user.update({
+        where: { id: userId },
+        data: { passwordHash },
+      });
+    });
+
+    return this.createAuthSession(user);
+  }
+
+  async refreshSession(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('USER_NOT_FOUND');
+    return this.createAuthSession(user);
+  }
+
+  async handleOtpDeliveryStatus(body: any, secret?: string) {
+    const expectedSecret = process.env.TWILIO_STATUS_CALLBACK_SECRET?.trim();
+    if (expectedSecret && secret !== expectedSecret) {
+      throw new UnauthorizedException('INVALID_STATUS_CALLBACK_SECRET');
+    }
+
+    const messageSid = (
+      body?.MessageSid ||
+      body?.SmsSid ||
+      body?.SmsMessageSid ||
+      ''
+    )
+      .toString()
+      .trim();
+    const status = (body?.MessageStatus || body?.SmsStatus || '')
+      .toString()
+      .trim()
+      .toLowerCase();
+    const errorCode = body?.ErrorCode?.toString();
+    const errorMessage = body?.ErrorMessage?.toString();
+
+    if (!messageSid) return { ignored: true, reason: 'missing_message_sid' };
+
+    const delivery = await this.prisma.authOtpDelivery.findUnique({
+      where: { messageSid },
+      include: { challenge: true },
+    });
+    if (!delivery) return { ignored: true, reason: 'unknown_message_sid' };
+
+    await this.prisma.authOtpDelivery.update({
+      where: { id: delivery.id },
+      data: { status, errorCode, errorMessage },
+    });
+
+    const failed = status === 'failed' || status === 'undelivered';
+    const challenge = delivery.challenge;
+    if (
+      !failed ||
+      delivery.channel !== 'sms' ||
+      delivery.fallbackSentAt ||
+      challenge.usedAt ||
+      challenge.expiresAt.getTime() < Date.now() ||
+      !this.whatsappOtpConfigured()
+    ) {
+      return { accepted: true, fallbackSent: false };
+    }
+
+    const otp = this.generateOtpCode();
+    const ttlSec = this.otpTtlSec();
+    await this.prisma.authOtpChallenge.update({
+      where: { id: challenge.id },
+      data: {
+        codeHash: this.hashOtp(challenge.phone, challenge.purpose, otp),
+        attempts: 0,
+        expiresAt: new Date(Date.now() + ttlSec * 1000),
+      },
+    });
+
+    const whatsapp = await this.sendOtpWhatsapp(challenge.phone, otp);
+    await this.recordOtpDelivery(challenge.id, whatsapp);
+    await this.prisma.authOtpDelivery.update({
+      where: { id: delivery.id },
+      data: { fallbackSentAt: new Date() },
+    });
+
+    return { accepted: true, fallbackSent: true };
   }
 
   async login(dto: LoginDto) {

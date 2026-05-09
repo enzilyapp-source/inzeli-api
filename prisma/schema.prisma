@@ -65,19 +65,39 @@ model User {
 }
 
 model AuthOtpChallenge {
-  id         String   @id @default(cuid())
-  phone      String
-  purpose    String
-  codeHash   String
-  expiresAt  DateTime
-  attempts   Int      @default(0)
-  maxAttempts Int     @default(5)
-  usedAt     DateTime?
-  payload    Json?
-  createdAt  DateTime @default(now())
+  id          String            @id @default(cuid())
+  phone       String
+  purpose     String
+  codeHash    String
+  expiresAt   DateTime
+  attempts    Int               @default(0)
+  maxAttempts Int               @default(5)
+  usedAt      DateTime?
+  payload     Json?
+  createdAt   DateTime          @default(now())
+  deliveries  AuthOtpDelivery[]
 
   @@index([phone, purpose, createdAt])
   @@index([expiresAt])
+}
+
+model AuthOtpDelivery {
+  id             String    @id @default(cuid())
+  challengeId    String
+  messageSid     String?   @unique
+  channel        String
+  status         String?
+  errorCode      String?
+  errorMessage   String?
+  fallbackSentAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  challenge AuthOtpChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+
+  @@index([challengeId])
+  @@index([messageSid])
+  @@index([channel, status])
 }
 
 model StoreItem {
