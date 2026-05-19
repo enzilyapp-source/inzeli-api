@@ -1,2 +1,2 @@
 ALTER TABLE "User"
-ADD COLUMN "vipUntil" DATETIME;
+ADD COLUMN "vipUntil" TIMESTAMP(3);
