@@ -89,7 +89,9 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
 
   private randomReminderLine() {
     const list = RoomsService.REMINDER_LINES;
-    return list[Math.floor(Math.random() * list.length)] ?? 'تم تذكيركم بحسم النتيجة';
+    return (
+      list[Math.floor(Math.random() * list.length)] ?? 'تم تذكيركم بحسم النتيجة'
+    );
   }
 
   private async sendPushReminder(params: {
@@ -112,7 +114,10 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       include_external_user_ids: recipients,
       channel_for_external_user_ids: 'push',
       headings: { ar: params.headingAr, en: 'Match reminder' },
-      contents: { ar: params.contentAr, en: 'Please complete the match result.' },
+      contents: {
+        ar: params.contentAr,
+        en: 'Please complete the match result.',
+      },
       data: params.data,
       ios_badgeType: 'Increase',
       ios_badgeCount: 1,
@@ -276,6 +281,60 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     return { A: calc('A'), B: calc('B') };
   }
 
+  private async withPlayerPearls<T extends any>(room: T): Promise<T> {
+    const anyRoom = room as any;
+    const gameId = (anyRoom?.gameId ?? '').toString();
+    const sponsorCode: string | null = anyRoom?.sponsorCode ?? null;
+    const dewanyahId: string | null = anyRoom?.dewanyahId ?? null;
+    if (!gameId || !Array.isArray(anyRoom?.players)) return room;
+
+    const players = await Promise.all(
+      anyRoom.players.map(async (player: any) => {
+        const userId = (player?.userId ?? player?.user?.id ?? '').toString();
+        if (!userId) return player;
+        let pearls = 0;
+        try {
+          if (sponsorCode) {
+            pearls = await getSponsorPearls(
+              this.prisma,
+              userId,
+              sponsorCode,
+              gameId,
+            );
+          } else if (dewanyahId) {
+            pearls = await getDewanyahPearls(
+              this.prisma,
+              userId,
+              dewanyahId,
+              gameId,
+            );
+          } else {
+            pearls = await getGamePearls(this.prisma, userId, gameId);
+          }
+        } catch (_) {
+          pearls =
+            Number(player?.user?.pearls) ||
+            Number(player?.user?.creditPoints) ||
+            Number(player?.user?.permanentScore) ||
+            0;
+        }
+        return {
+          ...player,
+          pearls,
+          user: player.user
+            ? {
+                ...player.user,
+                pearls,
+                gamePearls: { [gameId]: pearls },
+              }
+            : player.user,
+        };
+      }),
+    );
+
+    return { ...anyRoom, players } as T;
+  }
+
   private isDafanGame(gameId?: string | null) {
     const g = (gameId ?? '').toString().trim().toLowerCase();
     return g == 'دفان' || g == 'dafan';
@@ -290,6 +349,62 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     });
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
     return room;
+  }
+
+  private async assertUserHasNoActiveRoom(
+    userId: string,
+    excludeCode?: string,
+  ) {
+    const active = await this.prisma.roomPlayer.findFirst({
+      where: {
+        userId,
+        room: {
+          status: { in: ['waiting', 'running'] },
+          ...(excludeCode ? { code: { not: excludeCode } } : {}),
+        },
+      },
+      include: {
+        room: { select: { code: true, gameId: true, status: true } },
+      },
+    });
+
+    if (active?.room) {
+      throw new BadRequestException(
+        `PLAYER_ALREADY_IN_ACTIVE_ROOM:${active.room.code}`,
+      );
+    }
+  }
+
+  private async refundStake(
+    tx: Prisma.TransactionClient,
+    room: {
+      gameId: string;
+      sponsorCode?: string | null;
+      dewanyahId?: string | null;
+    },
+    stake: { userId: string; amount: number },
+  ) {
+    if (!stake.amount || stake.amount <= 0) return 0;
+    if (room.sponsorCode) {
+      await incSponsorPearls(
+        tx,
+        stake.userId,
+        room.sponsorCode,
+        room.gameId,
+        stake.amount,
+      );
+    } else if (room.dewanyahId) {
+      await incDewanyahPearls(
+        tx,
+        stake.userId,
+        room.dewanyahId,
+        room.gameId,
+        stake.amount,
+      );
+    } else {
+      await incGamePearls(tx, stake.userId, room.gameId, stake.amount);
+    }
+    return stake.amount;
   }
 
   // ---------- core ----------
@@ -312,6 +427,8 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       update: {},
       create: { id: gameId, name: gameId, category: 'عام' },
     });
+
+    await this.assertUserHasNoActiveRoom(hostId);
 
     if (dewanyahId) {
       const dew = await this.prisma.dewanyah.findUnique({
@@ -409,11 +526,12 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       return r;
     });
 
-    const locked = this.isLocked(room);
-    const remainingSec = this.remaining(room);
-    const teamQuorum = this.buildTeamQuorum(room as any);
+    const hydrated = await this.withPlayerPearls(room);
+    const locked = this.isLocked(hydrated);
+    const remainingSec = this.remaining(hydrated);
+    const teamQuorum = this.buildTeamQuorum(hydrated as any);
 
-    return { ...room, locked, remainingSec, teamQuorum };
+    return { ...hydrated, locked, remainingSec, teamQuorum };
   }
 
   async getByCode(code: string) {
@@ -440,11 +558,12 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
 
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
 
-    const locked = this.isLocked(room);
-    const remainingSec = this.remaining(room);
-    const teamQuorum = this.buildTeamQuorum(room as any);
+    const hydrated = await this.withPlayerPearls(room);
+    const locked = this.isLocked(hydrated);
+    const remainingSec = this.remaining(hydrated);
+    const teamQuorum = this.buildTeamQuorum(hydrated as any);
 
-    return { ...room, locked, remainingSec, teamQuorum };
+    return { ...hydrated, locked, remainingSec, teamQuorum };
   }
 
   async join(code: string, userId: string, lat?: number, lng?: number) {
@@ -452,6 +571,8 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       where: { code },
     })) as any;
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
+
+    await this.assertUserHasNoActiveRoom(userId, code);
 
     // لا يسمح بالانضمام بعد بدء العداد/الروم
     if (room.status !== 'waiting') {
@@ -575,6 +696,10 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     if ((room.players?.length ?? 0) < 2)
       throw new BadRequestException('NEED_TWO_PLAYERS');
 
+    for (const p of room.players) {
+      await this.assertUserHasNoActiveRoom(p.userId, code);
+    }
+
     if (this.isDafanGame(room.gameId)) {
       const total = room.players?.length ?? 0;
       if (total !== DAFAN_MAX_PLAYERS) {
@@ -625,11 +750,98 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const locked = this.isLocked(updated);
-    const remainingSec = this.remaining(updated);
-    const teamQuorum = this.buildTeamQuorum(updated as any);
+    const hydrated = await this.withPlayerPearls(updated);
+    const locked = this.isLocked(hydrated);
+    const remainingSec = this.remaining(hydrated);
+    const teamQuorum = this.buildTeamQuorum(hydrated as any);
 
-    return { ...updated, locked, remainingSec, teamQuorum };
+    return { ...hydrated, locked, remainingSec, teamQuorum };
+  }
+
+  async cancelRoom(code: string, userId: string, reason?: string) {
+    const room = await this.prisma.room.findUnique({
+      where: { code },
+      include: {
+        players: { select: { userId: true } },
+        stakes: { select: { userId: true, amount: true } },
+      },
+    });
+
+    if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
+
+    const inRoom = room.players.some((p) => p.userId === userId);
+    if (!inRoom && room.hostUserId !== userId) {
+      throw new ForbiddenException('NOT_IN_ROOM');
+    }
+
+    if (room.status === 'finished' || room.status === 'cancelled') {
+      return this.getByCode(code);
+    }
+
+    if (room.status !== 'waiting' && room.status !== 'running') {
+      throw new BadRequestException('ROOM_NOT_CANCELABLE');
+    }
+
+    const cleanedReason =
+      reason?.toString().trim().slice(0, 120) || 'cancelled';
+
+    const refunded = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.room.updateMany({
+        where: { code, status: { in: ['waiting', 'running'] } },
+        data: {
+          status: 'cancelled',
+          resultStatus: 'rejected',
+          resultPayload: Prisma.JsonNull,
+          resultSubmittedBy: null,
+          resultUpdatedAt: new Date(),
+          timerSec: null,
+          startedAt: null,
+        },
+      });
+      if (claimed.count === 0) return 0;
+
+      let total = 0;
+      const perUser: Record<string, number> = {};
+      const stakes = await tx.roomStake.findMany({
+        where: { roomCode: code, amount: { gt: 0 } },
+        select: { userId: true, amount: true },
+      });
+
+      for (const stake of stakes) {
+        const amount = await this.refundStake(tx, room, stake);
+        if (amount <= 0) continue;
+        total += amount;
+        perUser[stake.userId] = (perUser[stake.userId] ?? 0) + amount;
+      }
+
+      await tx.roomStake.updateMany({
+        where: { roomCode: code, amount: { gt: 0 } },
+        data: { amount: 0 },
+      });
+
+      await tx.roomResultVote.deleteMany({ where: { roomCode: code } });
+
+      await tx.timelineEvent.create({
+        data: {
+          kind: 'ROOM_CANCELLED',
+          roomCode: code,
+          gameId: room.gameId,
+          userId,
+          meta: {
+            reason: cleanedReason,
+            refundedPearls: total,
+            refundedByUser: perUser,
+            sponsorCode: room.sponsorCode ?? null,
+            dewanyahId: room.dewanyahId ?? null,
+          },
+        },
+      });
+
+      return total;
+    });
+
+    const latest = await this.getByCode(code);
+    return { ...latest, refundedPearls: refunded };
   }
 
   // Optional: allow changing stake before start (keeps your existing endpoint shape)

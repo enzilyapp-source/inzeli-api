@@ -97,6 +97,25 @@ export class RoomsController {
     }
   }
 
+  @UseGuards(AuthGuard('jwt'))
+  @Post(':code/cancel')
+  async cancel(
+    @Req() req: any,
+    @Param('code') code: string,
+    @Body() body: { reason?: string },
+  ) {
+    try {
+      const userId = getReqUserId(req);
+      if (!userId) throw new Error('AUTH_USER_ID_MISSING');
+      return ok(
+        'Room cancelled',
+        await this.rooms.cancelRoom(code, userId, body?.reason),
+      );
+    } catch (e: any) {
+      return err(e?.message || 'Cancel failed', e?.message);
+    }
+  }
+
   // نتيجة الروم (يقدّمها المضيف)
   @UseGuards(AuthGuard('jwt'))
   @Post(':code/result')
