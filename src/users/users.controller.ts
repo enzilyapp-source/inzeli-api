@@ -27,6 +27,7 @@ export class UsersController {
     publicId: true,
     email: true,
     displayName: true,
+    vipUntil: true,
     themeId: true,
     frameId: true,
     cardId: true,
@@ -238,6 +239,7 @@ export class UsersController {
           permanentScore: true,
           avatarBase64: true,
           avatarPath: true,
+          vipUntil: true,
           themeId: true,
         },
       });
@@ -254,6 +256,7 @@ export class UsersController {
         displayName: user.displayName ?? null,
         avatarBase64: user.avatarBase64 ?? null,
         avatarPath: user.avatarPath ?? null,
+        vipUntil: user.vipUntil ?? null,
         themeId: user.themeId ?? null,
         wins,
         losses,

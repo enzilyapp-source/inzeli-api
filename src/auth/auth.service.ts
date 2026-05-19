@@ -361,6 +361,7 @@ export class AuthService {
       creditPoints: pearls,
       pearls,
       creditBalance: user.creditBalance ?? 0,
+      vipUntil: user.vipUntil ?? null,
       themeId: user.themeId ?? null,
       frameId: user.frameId ?? null,
       cardId: user.cardId ?? null,

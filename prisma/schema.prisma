@@ -35,6 +35,7 @@ model User {
   createdAt         DateTime            @default(now())
   creditPoints      Int                 @default(5)
   creditBalance     Int                 @default(0)
+  vipUntil          DateTime?
   permanentScore    Int                 @default(0)
   pearls            Int                 @default(5)
   hideFromLeaderboard Boolean           @default(false)

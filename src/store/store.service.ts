@@ -10,11 +10,59 @@ import { PrismaService } from '../prisma.service';
 export class StoreService {
   constructor(private prisma: PrismaService) {}
 
+  private static readonly VIP_MONTHLY_ITEM_ID = 'vip_monthly';
+  private static readonly VIP_THEME_IDS = new Set([
+    'frame_sadu',
+    'frame_janjfa',
+    'frame_dama',
+    'frame_diwaniya',
+    'frame_fanar',
+    'frame_nokhatha',
+  ]);
+
+  private vipMonthlyPrice() {
+    const parsed = Number(process.env.VIP_MONTHLY_PRICE ?? 250);
+    if (!Number.isFinite(parsed)) return 250;
+    return Math.max(0, Math.trunc(parsed));
+  }
+
+  private vipMonthlyDays() {
+    const parsed = Number(process.env.VIP_MONTHLY_DAYS ?? 30);
+    if (!Number.isFinite(parsed)) return 30;
+    return Math.max(1, Math.trunc(parsed));
+  }
+
+  private vipSubscriptionItem() {
+    return {
+      id: StoreService.VIP_MONTHLY_ITEM_ID,
+      kind: 'subscription',
+      name: 'VIP شهري',
+      price: this.vipMonthlyPrice(),
+      description: 'اشتراك شهري',
+      preview: 'يفتح ثيمات VIP لمدة شهر',
+      active: true,
+      vipOnly: false,
+      vipDays: this.vipMonthlyDays(),
+    };
+  }
+
+  private hasActiveVip(vipUntil: Date | null | undefined) {
+    if (!vipUntil) return false;
+    return vipUntil.getTime() > Date.now();
+  }
+
   async list() {
-    return this.prisma.storeItem.findMany({
+    const items = await this.prisma.storeItem.findMany({
       where: { active: true },
       orderBy: [{ kind: 'asc' }, { price: 'asc' }],
     });
+    return [
+      this.vipSubscriptionItem(),
+      ...items.map((item) => ({
+        ...item,
+        vipOnly: StoreService.VIP_THEME_IDS.has(item.id),
+      })),
+    ];
   }
 
   async myItems(userId: string) {
@@ -26,6 +74,43 @@ export class StoreService {
   }
 
   async buy(userId: string, itemId: string) {
+    if (itemId === StoreService.VIP_MONTHLY_ITEM_ID) {
+      const days = this.vipMonthlyDays();
+      const price = this.vipMonthlyPrice();
+      return this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.findUnique({
+          where: { id: userId },
+          select: { creditBalance: true, vipUntil: true },
+        });
+        if (!user) throw new NotFoundException('USER_NOT_FOUND');
+        if ((user.creditBalance ?? 0) < price) {
+          throw new BadRequestException('NOT_ENOUGH_CREDIT');
+        }
+
+        const now = new Date();
+        const base =
+          user.vipUntil && user.vipUntil > now ? user.vipUntil : now;
+        const nextVipUntil = new Date(base.getTime());
+        nextVipUntil.setDate(nextVipUntil.getDate() + days);
+
+        const updated = await tx.user.update({
+          where: { id: userId },
+          data: {
+            creditBalance: { decrement: price },
+            vipUntil: nextVipUntil,
+          },
+          select: { creditBalance: true, vipUntil: true },
+        });
+
+        return {
+          itemId,
+          balance: updated.creditBalance ?? 0,
+          vipUntil: updated.vipUntil,
+          subscriptionActive: true,
+        };
+      });
+    }
+
     const item = await this.prisma.storeItem.findUnique({
       where: { id: itemId },
     });
@@ -76,8 +161,20 @@ export class StoreService {
   ) {
     const updates: any = {};
 
-    const checkOwnership = async (itemId: string | null | undefined) => {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { vipUntil: true },
+    });
+    if (!user) throw new NotFoundException('USER_NOT_FOUND');
+
+    const checkAccess = async (itemId: string | null | undefined) => {
       if (!itemId) return false;
+      if (
+        StoreService.VIP_THEME_IDS.has(itemId) &&
+        this.hasActiveVip(user.vipUntil)
+      ) {
+        return true;
+      }
       const owned = await this.prisma.userItem.findUnique({
         where: { userId_itemId: { userId, itemId } },
       });
@@ -87,20 +184,20 @@ export class StoreService {
 
     if (data.themeId !== undefined) {
       if (data.themeId === null || data.themeId === '') updates.themeId = null;
-      else if (await checkOwnership(data.themeId))
+      else if (await checkAccess(data.themeId))
         updates.themeId = data.themeId;
     }
     if (data.frameId !== undefined) {
       if (data.frameId === null || data.frameId === '') updates.frameId = null;
-      else if (await checkOwnership(data.frameId))
+      else if (await checkAccess(data.frameId))
         updates.frameId = data.frameId;
     }
     if (data.cardId !== undefined) {
       if (data.cardId === null || data.cardId === '') updates.cardId = null;
-      else if (await checkOwnership(data.cardId)) updates.cardId = data.cardId;
+      else if (await checkAccess(data.cardId)) updates.cardId = data.cardId;
     }
 
-    const user = await this.prisma.user.update({
+    const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: updates,
       select: {
@@ -109,10 +206,11 @@ export class StoreService {
         frameId: true,
         cardId: true,
         creditBalance: true,
+        vipUntil: true,
       },
     });
 
-    return user;
+    return updatedUser;
   }
 
   async balance(userId: string) {
