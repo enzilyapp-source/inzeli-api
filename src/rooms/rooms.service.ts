@@ -618,12 +618,18 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     // تحقق القرب (إن توفر موقع المضيف)
     if (room.hostLat != null && room.hostLng != null) {
       if (lat == null || lng == null) {
-        throw new BadRequestException('NEED_LOCATION');
-      }
-      const dist = haversineMeters(room.hostLat, room.hostLng, lat, lng);
-      const radius = room.radiusMeters ?? DEFAULT_RADIUS_METERS;
-      if (dist > radius) {
-        throw new BadRequestException('TOO_FAR');
+        // Backward-compatibility: older released builds may not send location
+        // when joining dewanyah rooms. Keep dewanyah play working for current
+        // players, while general rooms still require location as before.
+        if (!room.dewanyahId) {
+          throw new BadRequestException('NEED_LOCATION');
+        }
+      } else {
+        const dist = haversineMeters(room.hostLat, room.hostLng, lat, lng);
+        const radius = room.radiusMeters ?? DEFAULT_RADIUS_METERS;
+        if (dist > radius) {
+          throw new BadRequestException('TOO_FAR');
+        }
       }
     }
 
