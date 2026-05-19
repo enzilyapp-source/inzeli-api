@@ -355,7 +355,17 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     excludeCode?: string,
   ) {
-    const active = await this.prisma.roomPlayer.findFirst({
+    const active = await this.findActiveRoomForUser(userId, excludeCode);
+
+    if (active?.room) {
+      throw new BadRequestException(
+        `PLAYER_ALREADY_IN_ACTIVE_ROOM:${active.room.code}`,
+      );
+    }
+  }
+
+  private async findActiveRoomForUser(userId: string, excludeCode?: string) {
+    return this.prisma.roomPlayer.findFirst({
       where: {
         userId,
         room: {
@@ -367,12 +377,6 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
         room: { select: { code: true, gameId: true, status: true } },
       },
     });
-
-    if (active?.room) {
-      throw new BadRequestException(
-        `PLAYER_ALREADY_IN_ACTIVE_ROOM:${active.room.code}`,
-      );
-    }
   }
 
   private async refundStake(
@@ -427,6 +431,13 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       update: {},
       create: { id: gameId, name: gameId, category: 'عام' },
     });
+
+    if (dewanyahId) {
+      const active = await this.findActiveRoomForUser(hostId);
+      if (active?.room?.code) {
+        return this.getByCode(active.room.code);
+      }
+    }
 
     await this.assertUserHasNoActiveRoom(hostId);
 
