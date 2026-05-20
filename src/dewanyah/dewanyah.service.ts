@@ -387,10 +387,11 @@ export class DewanyahService {
     if (!dew) throw new Error('Dewanyah not found');
 
     const gameIds = dew.games.map((g) => g.gameId).filter((g) => g.length > 0);
-    const selectedGameId =
-      gameId && gameIds.includes(gameId)
-        ? gameId
-        : (gameIds[0] ?? null);
+    const requestedGameId = (gameId ?? '').trim();
+    if (requestedGameId && !gameIds.includes(requestedGameId)) {
+      throw new Error('GAME_NOT_IN_DEWANYAH');
+    }
+    const selectedGameId = requestedGameId || null;
 
     const members = await this.prisma.dewanyahMember.findMany({
       where: {
@@ -419,9 +420,7 @@ export class DewanyahService {
       userId: m.userId,
       displayName: m.user?.displayName ?? 'لاعب',
       email: m.user?.email,
-      pearls:
-        walletMap.get(m.userId) ??
-        (selectedGameId ? 5 : (m.user?.pearls ?? 5)),
+      pearls: selectedGameId ? (walletMap.get(m.userId) ?? 0) : 0,
       status: m.status,
       joinedAt: m.createdAt,
     }));
