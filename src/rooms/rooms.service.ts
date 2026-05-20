@@ -435,7 +435,24 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     if (dewanyahId) {
       const active = await this.findActiveRoomForUser(hostId);
       if (active?.room?.code) {
-        return this.getByCode(active.room.code);
+        const activeRoom = await this.prisma.room.findUnique({
+          where: { code: active.room.code },
+          select: {
+            code: true,
+            gameId: true,
+            dewanyahId: true,
+            status: true,
+          },
+        });
+        if (
+          activeRoom &&
+          activeRoom.status &&
+          (activeRoom.status === 'waiting' || activeRoom.status === 'running') &&
+          activeRoom.dewanyahId === dewanyahId &&
+          activeRoom.gameId === gameId
+        ) {
+          return this.getByCode(active.room.code);
+        }
       }
     }
 
