@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -131,6 +132,36 @@ export class DewanyahController {
       if (status.isEmpty) return err('status required', 'VALIDATION');
       const data = await this.dewanyah.setMemberStatus(id, memberId, status);
       return ok('Status updated', data);
+    } catch (e: any) {
+      return err(e?.message || 'Failed', e?.message);
+    }
+  }
+
+  // Member: leave a dewanyah
+  @UseGuards(AuthGuard('jwt'))
+  @Delete(':id/members/me')
+  async leave(@Req() req: any, @Param('id') id: string) {
+    try {
+      const userId = req.user.userId;
+      const data = await this.dewanyah.leaveDewanyah(id, userId);
+      return ok('Left dewanyah', data);
+    } catch (e: any) {
+      return err(e?.message || 'Failed', e?.message);
+    }
+  }
+
+  // Owner: remove any member from their dewanyah
+  @UseGuards(AuthGuard('jwt'))
+  @Delete(':id/members/:userId')
+  async removeMember(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('userId') memberId: string,
+  ) {
+    try {
+      const ownerUserId = req.user.userId;
+      const data = await this.dewanyah.removeMember(id, ownerUserId, memberId);
+      return ok('Member removed', data);
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);
     }

@@ -58,6 +58,18 @@ export class AdminDewanyahController {
     }
   }
 
+  // Delete creation request (admin)
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
+  @Delete('requests/:id')
+  async deleteRequest(@Param('id') id: string) {
+    try {
+      const data = await this.dewanyah.deleteRequest(id);
+      return ok('Request deleted', data);
+    } catch (e: any) {
+      return err(e?.message || 'Failed', e?.message);
+    }
+  }
+
   // Add game to existing dewanyah
   @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Post(':id/games')

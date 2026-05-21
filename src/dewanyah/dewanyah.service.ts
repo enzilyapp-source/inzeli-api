@@ -201,6 +201,20 @@ export class DewanyahService {
     return dew;
   }
 
+  async deleteRequest(requestId: string) {
+    const req = await this.prisma.dewanyahRequest.findUnique({
+      where: { id: requestId },
+      select: { id: true },
+    });
+    if (!req) throw new Error('Request not found');
+
+    await this.prisma.dewanyahRequest.delete({
+      where: { id: requestId },
+    });
+
+    return { id: requestId };
+  }
+
   async updateDewanyah(
     id: string,
     data: {
@@ -278,16 +292,15 @@ export class DewanyahService {
       },
     });
 
-    const becamePending = status === 'pending' && existing?.status !== 'pending';
+    const becamePending =
+      status === 'pending' && existing?.status !== 'pending';
     if (becamePending && dew.ownerUserId && dew.ownerUserId !== userId) {
       const requester = await this.prisma.user.findUnique({
         where: { id: userId },
         select: { displayName: true, email: true },
       });
       const requesterName =
-        requester?.displayName?.trim() ||
-        requester?.email?.trim() ||
-        'لاعب';
+        requester?.displayName?.trim() || requester?.email?.trim() || 'لاعب';
       void this.notifyDewanyahOwnerJoinRequest({
         ownerUserId: dew.ownerUserId,
         dewanyahId,
@@ -360,6 +373,39 @@ export class DewanyahService {
         approvedAt: status === 'approved' ? new Date() : null,
       },
     });
+  }
+
+  async removeMember(
+    dewanyahId: string,
+    ownerUserId: string,
+    memberUserId: string,
+  ) {
+    const dew = await this.getOwnerDewanyah(dewanyahId, ownerUserId);
+    if (!memberUserId) throw new Error('userId required');
+    if (memberUserId === ownerUserId || memberUserId === dew.ownerUserId) {
+      throw new Error('OWNER_CANNOT_REMOVE_SELF');
+    }
+
+    const deleted = await this.prisma.dewanyahMember.deleteMany({
+      where: { dewanyahId, userId: memberUserId },
+    });
+
+    return { dewanyahId, userId: memberUserId, deleted: deleted.count };
+  }
+
+  async leaveDewanyah(dewanyahId: string, userId: string) {
+    const dew = await this.prisma.dewanyah.findUnique({
+      where: { id: dewanyahId },
+      select: { ownerUserId: true },
+    });
+    if (!dew) throw new Error('Dewanyah not found');
+    if (dew.ownerUserId === userId) throw new Error('OWNER_CANNOT_LEAVE');
+
+    const deleted = await this.prisma.dewanyahMember.deleteMany({
+      where: { dewanyahId, userId },
+    });
+
+    return { dewanyahId, userId, deleted: deleted.count };
   }
 
   async listMembersForOwner(dewanyahId: string, ownerUserId: string) {
