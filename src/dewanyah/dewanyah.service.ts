@@ -1,9 +1,34 @@
 import { Injectable } from '@nestjs/common';
+import { getDewanyahPearls } from '../common/pearls';
 import { PrismaService } from '../prisma.service';
 
 @Injectable()
 export class DewanyahService {
   constructor(private prisma: PrismaService) {}
+
+  private async ensureApprovedMemberWallets(
+    dewanyahId: string,
+    gameId: string,
+    userIds?: string[],
+  ) {
+    const targetUserIds =
+      userIds && userIds.length > 0
+        ? Array.from(new Set(userIds.filter((x) => x.trim().length > 0)))
+        : (
+            await this.prisma.dewanyahMember.findMany({
+              where: { dewanyahId, status: 'approved' },
+              select: { userId: true },
+            })
+          ).map((m) => m.userId);
+
+    if (targetUserIds.length === 0 || !gameId.trim()) return;
+
+    await Promise.all(
+      targetUserIds.map((userId) =>
+        getDewanyahPearls(this.prisma, userId, dewanyahId, gameId),
+      ),
+    );
+  }
 
   private normalizePrizeAmount(value: number | undefined) {
     if (value == null || !Number.isFinite(value)) return undefined;
@@ -198,6 +223,10 @@ export class DewanyahService {
       data: { status: 'approved', reviewedAt: new Date() },
     });
 
+    if (req.gameId?.trim()) {
+      await this.ensureApprovedMemberWallets(dew.id, req.gameId, [req.userId]);
+    }
+
     return dew;
   }
 
@@ -254,7 +283,7 @@ export class DewanyahService {
   }
 
   async addGameToDewanyah(dewanyahId: string, gameId: string) {
-    return this.prisma.dewanyahGame.upsert({
+    const game = await this.prisma.dewanyahGame.upsert({
       where: {
         dewanyahId_gameId: {
           dewanyahId,
@@ -264,6 +293,8 @@ export class DewanyahService {
       update: {},
       create: { dewanyahId, gameId },
     });
+    await this.ensureApprovedMemberWallets(dewanyahId, gameId);
+    return game;
   }
 
   async requestJoin(dewanyahId: string, userId: string) {
@@ -291,6 +322,18 @@ export class DewanyahService {
         approvedAt: status === 'approved' ? new Date() : null,
       },
     });
+
+    if (status === 'approved') {
+      const dewGames = await this.prisma.dewanyahGame.findMany({
+        where: { dewanyahId },
+        select: { gameId: true },
+      });
+      await Promise.all(
+        dewGames.map((g) =>
+          this.ensureApprovedMemberWallets(dewanyahId, g.gameId, [userId]),
+        ),
+      );
+    }
 
     const becamePending =
       status === 'pending' && existing?.status !== 'pending';
@@ -364,7 +407,7 @@ export class DewanyahService {
   }
 
   async setMemberStatus(dewanyahId: string, userId: string, status: string) {
-    return this.prisma.dewanyahMember.update({
+    const member = await this.prisma.dewanyahMember.update({
       where: {
         dewanyahId_userId: { dewanyahId, userId },
       },
@@ -373,6 +416,18 @@ export class DewanyahService {
         approvedAt: status === 'approved' ? new Date() : null,
       },
     });
+    if (status === 'approved') {
+      const dewGames = await this.prisma.dewanyahGame.findMany({
+        where: { dewanyahId },
+        select: { gameId: true },
+      });
+      await Promise.all(
+        dewGames.map((g) =>
+          this.ensureApprovedMemberWallets(dewanyahId, g.gameId, [userId]),
+        ),
+      );
+    }
+    return member;
   }
 
   async removeMember(
@@ -455,6 +510,11 @@ export class DewanyahService {
     const userIds = members.map((m) => m.userId);
     const walletMap = new Map<string, number>();
     if (selectedGameId && userIds.length > 0) {
+      await this.ensureApprovedMemberWallets(
+        dewanyahId,
+        selectedGameId,
+        userIds,
+      );
       const wallets = await this.prisma.dewanyahGameWallet.findMany({
         where: { dewanyahId, gameId: selectedGameId, userId: { in: userIds } },
         select: { userId: true, pearls: true },
@@ -553,6 +613,10 @@ export class DewanyahService {
     if (themePrimary != null) payload.themePrimary = themePrimary;
     if (themeAccent != null) payload.themeAccent = themeAccent;
 
-    return this.prisma.dewanyah.create({ data: payload });
+    const dew = await this.prisma.dewanyah.create({ data: payload });
+    if (ownerUserId) {
+      await this.ensureApprovedMemberWallets(dew.id, gameId, [ownerUserId]);
+    }
+    return dew;
   }
 }
