@@ -62,6 +62,10 @@ TWILIO_WHATSAPP_ALLOW_FREEFORM=false
 # Use your public API domain; route is POST /api/auth/otp/status.
 PUBLIC_API_BASE_URL=https://api.enzily.app
 TWILIO_STATUS_CALLBACK_SECRET=change-me
+
+# Optional: prefer WhatsApp first, then fall back to SMS if WhatsApp fails.
+# Useful when SMS delivery is unreliable for your target carrier/region.
+OTP_PREFER_WHATSAPP=false
 ```
 
 Optional controls:

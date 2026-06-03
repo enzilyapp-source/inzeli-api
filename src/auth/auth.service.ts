@@ -204,6 +204,10 @@ export class AuthService {
     return process.env.TWILIO_WHATSAPP_ALLOW_FREEFORM === 'true';
   }
 
+  private otpPreferWhatsapp() {
+    return process.env.OTP_PREFER_WHATSAPP === 'true';
+  }
+
   private async sendTwilioMessage(
     channel: OtpDeliveryChannel,
     body: URLSearchParams,
@@ -313,6 +317,18 @@ export class AuthService {
     challengeId: string,
   ) {
     let smsFailed = false;
+    let whatsappFailed = false;
+
+    if (this.otpPreferWhatsapp() && this.whatsappOtpConfigured()) {
+      try {
+        const whatsapp = await this.sendOtpWhatsapp(phone, code);
+        await this.recordOtpDelivery(challengeId, whatsapp);
+        return whatsapp;
+      } catch (e) {
+        whatsappFailed = true;
+        console.error('OTP_WHATSAPP_FAILED_TRY_SMS', e);
+      }
+    }
 
     if (process.env.TWILIO_FROM_NUMBER) {
       try {
@@ -332,7 +348,9 @@ export class AuthService {
     }
 
     throw new BadRequestException(
-      smsFailed ? 'OTP_SEND_FAILED' : 'OTP_PROVIDER_NOT_CONFIGURED',
+      smsFailed || whatsappFailed
+        ? 'OTP_SEND_FAILED'
+        : 'OTP_PROVIDER_NOT_CONFIGURED',
     );
   }
 
