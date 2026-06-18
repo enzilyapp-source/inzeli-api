@@ -32,7 +32,17 @@ The auth flow now supports phone verification via OTP for registration:
 - `POST /api/auth/register/request-otp`
 - `POST /api/auth/register/verify-otp`
 
-### Required Environment Variables (SMS)
+### Required Environment Variables (OTP Provider)
+
+Choose the SMS provider with:
+
+```bash
+# Supported values: twilio | infobip
+# Default: twilio
+OTP_PROVIDER=twilio
+```
+
+#### Twilio SMS
 
 Use Twilio SMS for real OTP delivery:
 
@@ -67,6 +77,25 @@ TWILIO_STATUS_CALLBACK_SECRET=change-me
 # Useful when SMS delivery is unreliable for your target carrier/region.
 OTP_PREFER_WHATSAPP=false
 ```
+
+#### Infobip SMS
+
+Use Infobip SMS for OTP delivery:
+
+```bash
+OTP_PROVIDER=infobip
+INFOBIP_BASE_URL=https://your-base-url.api.infobip.com
+INFOBIP_API_KEY=...
+
+# Shared or owned Infobip sender number, e.g. +447491163443
+INFOBIP_SMS_SENDER=+44XXXXXXXXXXX
+```
+
+Notes:
+
+- If `OTP_PROVIDER=infobip`, the backend tries Infobip first.
+- If Infobip fails and `TWILIO_FROM_NUMBER` is still configured, the backend falls back to Twilio SMS.
+- Keep Twilio credentials in Render if you want that fallback path available.
 
 Optional controls:
 

@@ -29,6 +29,7 @@ type RegisterOtpPayload = {
 };
 
 type OtpDeliveryChannel = 'sms' | 'whatsapp';
+type OtpProvider = 'twilio' | 'infobip';
 
 type OtpSendResult = {
   channel: OtpDeliveryChannel;
@@ -122,6 +123,12 @@ export class AuthService {
     return process.env.OTP_HASH_SECRET || process.env.JWT_SECRET || 'dev-otp';
   }
 
+  private otpProvider(): OtpProvider {
+    return process.env.OTP_PROVIDER?.trim().toLowerCase() === 'infobip'
+      ? 'infobip'
+      : 'twilio';
+  }
+
   private hashOtp(phone: string, purpose: string, code: string) {
     return createHmac('sha256', this.otpHashSecret())
       .update(`${phone}:${purpose}:${code}`)
@@ -160,6 +167,27 @@ export class AuthService {
       throw new BadRequestException('OTP_PROVIDER_NOT_CONFIGURED');
     }
     return { sid, token };
+  }
+
+  private infobipBaseUrl() {
+    const raw = process.env.INFOBIP_BASE_URL?.trim();
+    return raw ? raw.replace(/\/+$/, '') : '';
+  }
+
+  private infobipApiKey() {
+    return process.env.INFOBIP_API_KEY?.trim() || '';
+  }
+
+  private infobipSmsSender() {
+    return process.env.INFOBIP_SMS_SENDER?.trim() || '';
+  }
+
+  private infobipOtpConfigured() {
+    return !!(
+      this.infobipBaseUrl() &&
+      this.infobipApiKey() &&
+      this.infobipSmsSender()
+    );
   }
 
   private twilioStatusCallbackUrl() {
@@ -263,6 +291,60 @@ export class AuthService {
     return this.sendTwilioMessage('sms', params);
   }
 
+  private async sendOtpInfobipSms(phone: string, code: string) {
+    const baseUrl = this.infobipBaseUrl();
+    const apiKey = this.infobipApiKey();
+    const sender = this.infobipSmsSender();
+
+    if (!baseUrl || !apiKey || !sender) {
+      throw new BadRequestException('OTP_PROVIDER_NOT_CONFIGURED');
+    }
+
+    const minutes = Math.max(1, Math.round(this.otpTtlSec() / 60));
+    const response = await fetch(`${baseUrl}/sms/2/text/advanced`, {
+      method: 'POST',
+      headers: {
+        Authorization: `App ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            from: sender,
+            destinations: [{ to: phone }],
+            text: `Inzeli verification code: ${code}. Valid for ${minutes} minute(s).`,
+          },
+        ],
+      }),
+    });
+
+    const raw = await response.text();
+    let parsed: any = {};
+    try {
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      parsed = {};
+    }
+
+    if (!response.ok) {
+      console.error('OTP_SEND_FAILED', 'infobip', response.status, raw);
+      throw new BadRequestException('OTP_SEND_FAILED');
+    }
+
+    const first = Array.isArray(parsed?.messages) ? parsed.messages[0] : null;
+    return {
+      channel: 'sms' as const,
+      sid: typeof first?.messageId === 'string' ? first.messageId : undefined,
+      status:
+        typeof first?.status?.name === 'string'
+          ? first.status.name
+          : typeof first?.status?.description === 'string'
+            ? first.status.description
+            : undefined,
+    };
+  }
+
   private async sendOtpWhatsapp(phone: string, code: string) {
     const from = this.whatsappFrom();
     if (!from) throw new BadRequestException('OTP_WHATSAPP_NOT_CONFIGURED');
@@ -316,6 +398,35 @@ export class AuthService {
     code: string,
     challengeId: string,
   ) {
+    if (this.otpProvider() === 'infobip') {
+      let infobipFailed = false;
+
+      if (this.infobipOtpConfigured()) {
+        try {
+          const sms = await this.sendOtpInfobipSms(phone, code);
+          await this.recordOtpDelivery(challengeId, sms);
+          return sms;
+        } catch (e) {
+          infobipFailed = true;
+          console.error('OTP_INFOBIP_FAILED_TRY_TWILIO', e);
+        }
+      }
+
+      if (process.env.TWILIO_FROM_NUMBER) {
+        try {
+          const sms = await this.sendOtpSms(phone, code);
+          await this.recordOtpDelivery(challengeId, sms);
+          return sms;
+        } catch (e) {
+          console.error('OTP_TWILIO_SMS_FAILED_AFTER_INFOBIP', e);
+        }
+      }
+
+      throw new BadRequestException(
+        infobipFailed ? 'OTP_SEND_FAILED' : 'OTP_PROVIDER_NOT_CONFIGURED',
+      );
+    }
+
     let smsFailed = false;
     let whatsappFailed = false;
 
