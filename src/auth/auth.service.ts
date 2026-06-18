@@ -28,13 +28,15 @@ type RegisterOtpPayload = {
   birthDate?: string;
 };
 
-type OtpDeliveryChannel = 'sms' | 'whatsapp';
+type OtpDeliveryChannel = 'sms' | 'whatsapp' | 'call' | 'email';
 type OtpProvider = 'twilio' | 'infobip';
+type OtpVerifier = 'local' | 'twilio_verify';
 
 type OtpSendResult = {
   channel: OtpDeliveryChannel;
   sid?: string;
   status?: string;
+  verifier?: OtpVerifier;
 };
 
 function isBcryptHash(s: string) {
@@ -129,6 +131,12 @@ export class AuthService {
       : 'twilio';
   }
 
+  private normalizeOtpChannel(channel?: string): 'sms' | 'call' | 'email' {
+    const clean = channel?.trim().toLowerCase();
+    if (clean === 'call' || clean === 'email') return clean;
+    return 'sms';
+  }
+
   private hashOtp(phone: string, purpose: string, code: string) {
     return createHmac('sha256', this.otpHashSecret())
       .update(`${phone}:${purpose}:${code}`)
@@ -167,6 +175,26 @@ export class AuthService {
       throw new BadRequestException('OTP_PROVIDER_NOT_CONFIGURED');
     }
     return { sid, token };
+  }
+
+  private twilioVerifyServiceSid() {
+    return process.env.TWILIO_VERIFY_SERVICE_SID?.trim() || '';
+  }
+
+  private twilioVerifyConfigured() {
+    return !!(
+      process.env.TWILIO_ACCOUNT_SID?.trim() &&
+      process.env.TWILIO_AUTH_TOKEN?.trim() &&
+      this.twilioVerifyServiceSid()
+    );
+  }
+
+  private otpFromEmail() {
+    return process.env.OTP_FROM_EMAIL?.trim() || 'noreply@enzily.com';
+  }
+
+  private resendApiKey() {
+    return process.env.RESEND_API_KEY?.trim() || '';
   }
 
   private infobipBaseUrl() {
@@ -272,6 +300,137 @@ export class AuthService {
       channel,
       sid: typeof parsed?.sid === 'string' ? parsed.sid : undefined,
       status: typeof parsed?.status === 'string' ? parsed.status : undefined,
+    };
+  }
+
+  private async sendOtpTwilioVerify(
+    phone: string,
+    channel: 'sms' | 'call',
+  ): Promise<OtpSendResult> {
+    const serviceSid = this.twilioVerifyServiceSid();
+    if (!serviceSid) throw new BadRequestException('OTP_VERIFY_NOT_CONFIGURED');
+
+    const { sid, token } = this.twilioCredentials();
+    const params = new URLSearchParams({
+      To: phone,
+      Channel: channel,
+      Locale: 'ar',
+    });
+
+    const response = await fetch(
+      `https://verify.twilio.com/v2/Services/${serviceSid}/Verifications`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString(
+            'base64',
+          )}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      },
+    );
+
+    const raw = await response.text();
+    let parsed: any = {};
+    try {
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      parsed = {};
+    }
+
+    if (!response.ok) {
+      console.error('OTP_VERIFY_SEND_FAILED', channel, response.status, raw);
+      throw new BadRequestException('OTP_SEND_FAILED');
+    }
+
+    return {
+      channel,
+      sid: typeof parsed?.sid === 'string' ? parsed.sid : undefined,
+      status: typeof parsed?.status === 'string' ? parsed.status : undefined,
+      verifier: 'twilio_verify',
+    };
+  }
+
+  private async checkTwilioVerifyCode(phone: string, code: string) {
+    const serviceSid = this.twilioVerifyServiceSid();
+    if (!serviceSid) throw new BadRequestException('OTP_VERIFY_NOT_CONFIGURED');
+
+    const { sid, token } = this.twilioCredentials();
+    const params = new URLSearchParams({
+      To: phone,
+      Code: code,
+    });
+
+    const response = await fetch(
+      `https://verify.twilio.com/v2/Services/${serviceSid}/VerificationCheck`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString(
+            'base64',
+          )}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      },
+    );
+
+    const raw = await response.text();
+    let parsed: any = {};
+    try {
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      parsed = {};
+    }
+
+    if (!response.ok) {
+      console.error('OTP_VERIFY_CHECK_FAILED', response.status, raw);
+      return false;
+    }
+
+    return parsed?.status === 'approved' || parsed?.valid === true;
+  }
+
+  private async sendOtpEmail(email: string, code: string) {
+    const apiKey = this.resendApiKey();
+    const fromEmail = this.otpFromEmail();
+    if (!apiKey || !fromEmail) {
+      throw new BadRequestException('OTP_EMAIL_NOT_CONFIGURED');
+    }
+
+    const minutes = Math.max(1, Math.round(this.otpTtlSec() / 60));
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: `Enzily <${fromEmail}>`,
+        to: [email],
+        subject: 'رمز تحقق إنزلي',
+        text: `رمز تحقق إنزلي: ${code}\nصالح لمدة ${minutes} دقائق.`,
+      }),
+    });
+
+    const raw = await response.text();
+    let parsed: any = {};
+    try {
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      parsed = {};
+    }
+
+    if (!response.ok) {
+      console.error('OTP_EMAIL_SEND_FAILED', response.status, raw);
+      throw new BadRequestException('OTP_SEND_FAILED');
+    }
+
+    return {
+      channel: 'email' as const,
+      sid: typeof parsed?.id === 'string' ? parsed.id : undefined,
+      status: 'sent',
     };
   }
 
@@ -395,9 +554,29 @@ export class AuthService {
 
   private async sendOtpWithFallback(
     phone: string,
+    email: string,
     code: string,
     challengeId: string,
+    requestedChannel: 'sms' | 'call' | 'email' = 'sms',
   ) {
+    if (requestedChannel === 'email') {
+      const emailResult = await this.sendOtpEmail(email, code);
+      await this.recordOtpDelivery(challengeId, emailResult);
+      return emailResult;
+    }
+
+    if (requestedChannel === 'call') {
+      const call = await this.sendOtpTwilioVerify(phone, 'call');
+      await this.recordOtpDelivery(challengeId, call);
+      return call;
+    }
+
+    if (this.twilioVerifyConfigured()) {
+      const sms = await this.sendOtpTwilioVerify(phone, 'sms');
+      await this.recordOtpDelivery(challengeId, sms);
+      return sms;
+    }
+
     if (this.otpProvider() === 'infobip') {
       let infobipFailed = false;
 
@@ -572,6 +751,13 @@ export class AuthService {
     const email = this.normalizeEmail(dto.email);
     const phone = this.normalizePhone(dto.phone);
     const displayName = this.normalizeDisplayName(dto.displayName);
+    const requestedChannel = this.normalizeOtpChannel(dto.channel);
+    const verifier: OtpVerifier =
+      requestedChannel === 'sms' || requestedChannel === 'call'
+        ? this.twilioVerifyConfigured()
+          ? 'twilio_verify'
+          : 'local'
+        : 'local';
 
     await this.assertEmailPhoneAvailable(email, phone);
 
@@ -610,17 +796,30 @@ export class AuthService {
       data: {
         phone,
         purpose: REGISTER_OTP_PURPOSE,
-        codeHash: this.hashOtp(phone, REGISTER_OTP_PURPOSE, otp),
+        codeHash:
+          verifier === 'twilio_verify'
+            ? this.hashOtp(phone, REGISTER_OTP_PURPOSE, 'twilio_verify')
+            : this.hashOtp(phone, REGISTER_OTP_PURPOSE, otp),
         expiresAt: new Date(Date.now() + ttlSec * 1000),
         maxAttempts: this.otpMaxAttempts(),
-        payload: payload as unknown as Prisma.InputJsonValue,
+        payload: {
+          ...payload,
+          otpVerifier: verifier,
+          otpChannel: requestedChannel,
+        } as unknown as Prisma.InputJsonValue,
       },
       select: { id: true },
     });
 
     let delivery: OtpSendResult;
     try {
-      delivery = await this.sendOtpWithFallback(phone, otp, challenge.id);
+      delivery = await this.sendOtpWithFallback(
+        phone,
+        email,
+        otp,
+        challenge.id,
+        requestedChannel,
+      );
     } catch (e) {
       await this.prisma.authOtpChallenge
         .delete({ where: { id: challenge.id } })
@@ -633,7 +832,9 @@ export class AuthService {
       requestId: challenge.id,
       expiresInSec: ttlSec,
       deliveryChannel: delivery.channel,
-      ...(process.env.AUTH_DEBUG_OTP === 'true' ? { debugCode: otp } : {}),
+      ...(process.env.AUTH_DEBUG_OTP === 'true' && verifier !== 'twilio_verify'
+        ? { debugCode: otp }
+        : {}),
     };
   }
 
@@ -653,12 +854,16 @@ export class AuthService {
       throw new BadRequestException('OTP_TOO_MANY_ATTEMPTS');
     }
 
-    const expectedHash = this.hashOtp(
-      challenge.phone,
-      challenge.purpose,
-      dto.code,
-    );
-    if (expectedHash !== challenge.codeHash) {
+    const raw = challenge.payload as Record<string, unknown> | null;
+    const verifier =
+      raw?.otpVerifier === 'twilio_verify' ? 'twilio_verify' : 'local';
+    const approved =
+      verifier === 'twilio_verify'
+        ? await this.checkTwilioVerifyCode(challenge.phone, dto.code)
+        : this.hashOtp(challenge.phone, challenge.purpose, dto.code) ===
+          challenge.codeHash;
+
+    if (!approved) {
       await this.prisma.authOtpChallenge.update({
         where: { id: challenge.id },
         data: { attempts: { increment: 1 } },
@@ -666,7 +871,6 @@ export class AuthService {
       throw new BadRequestException('OTP_INVALID');
     }
 
-    const raw = challenge.payload as Record<string, unknown> | null;
     const email = typeof raw?.email === 'string' ? raw.email : '';
     const phone = typeof raw?.phone === 'string' ? raw.phone : '';
     const displayName =
@@ -737,15 +941,24 @@ export class AuthService {
 
   async requestPasswordResetOtp(dto: RequestPasswordResetOtpDto) {
     const email = this.normalizeEmail(dto.email);
+    const requestedChannel = this.normalizeOtpChannel(dto.channel);
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new BadRequestException('PASSWORD_RESET_NOT_FOUND');
-    if (!user.phone)
+    if (requestedChannel !== 'email' && !user.phone)
       throw new BadRequestException('PASSWORD_RESET_PHONE_MISSING');
+
+    const challengePhone = user.phone || `email:${email}`;
+    const verifier: OtpVerifier =
+      requestedChannel === 'sms' || requestedChannel === 'call'
+        ? this.twilioVerifyConfigured()
+          ? 'twilio_verify'
+          : 'local'
+        : 'local';
 
     const rateWindowSec = this.otpRateWindowSec();
     const recent = await this.prisma.authOtpChallenge.findFirst({
       where: {
-        phone: user.phone,
+        phone: challengePhone,
         purpose: PASSWORD_RESET_OTP_PURPOSE,
         createdAt: {
           gte: new Date(Date.now() - rateWindowSec * 1000),
@@ -760,19 +973,36 @@ export class AuthService {
     const ttlSec = this.otpTtlSec();
     const challenge = await this.prisma.authOtpChallenge.create({
       data: {
-        phone: user.phone,
+        phone: challengePhone,
         purpose: PASSWORD_RESET_OTP_PURPOSE,
-        codeHash: this.hashOtp(user.phone, PASSWORD_RESET_OTP_PURPOSE, otp),
+        codeHash:
+          verifier === 'twilio_verify'
+            ? this.hashOtp(
+                challengePhone,
+                PASSWORD_RESET_OTP_PURPOSE,
+                'twilio_verify',
+              )
+            : this.hashOtp(challengePhone, PASSWORD_RESET_OTP_PURPOSE, otp),
         expiresAt: new Date(Date.now() + ttlSec * 1000),
         maxAttempts: this.otpMaxAttempts(),
-        payload: { userId: user.id } as unknown as Prisma.InputJsonValue,
+        payload: {
+          userId: user.id,
+          otpVerifier: verifier,
+          otpChannel: requestedChannel,
+        } as unknown as Prisma.InputJsonValue,
       },
       select: { id: true },
     });
 
     let delivery: OtpSendResult;
     try {
-      delivery = await this.sendOtpWithFallback(user.phone, otp, challenge.id);
+      delivery = await this.sendOtpWithFallback(
+        user.phone || '',
+        email,
+        otp,
+        challenge.id,
+        requestedChannel,
+      );
     } catch (e) {
       await this.prisma.authOtpChallenge
         .delete({ where: { id: challenge.id } })
@@ -780,14 +1010,17 @@ export class AuthService {
       throw e;
     }
 
-    const last4 = user.phone.slice(-4);
+    const last4 = user.phone?.slice(-4);
     return {
       otpRequired: true,
       requestId: challenge.id,
       expiresInSec: ttlSec,
-      phoneHint: `****${last4}`,
+      ...(last4 ? { phoneHint: `****${last4}` } : {}),
+      emailHint: email.replace(/^(.{2}).*(@.*)$/, '$1***$2'),
       deliveryChannel: delivery.channel,
-      ...(process.env.AUTH_DEBUG_OTP === 'true' ? { debugCode: otp } : {}),
+      ...(process.env.AUTH_DEBUG_OTP === 'true' && verifier !== 'twilio_verify'
+        ? { debugCode: otp }
+        : {}),
     };
   }
 
@@ -807,12 +1040,19 @@ export class AuthService {
       throw new BadRequestException('OTP_TOO_MANY_ATTEMPTS');
     }
 
-    const expectedHash = this.hashOtp(
-      challenge.phone,
-      PASSWORD_RESET_OTP_PURPOSE,
-      dto.code,
-    );
-    if (expectedHash !== challenge.codeHash) {
+    const raw = challenge.payload as Record<string, unknown> | null;
+    const verifier =
+      raw?.otpVerifier === 'twilio_verify' ? 'twilio_verify' : 'local';
+    const approved =
+      verifier === 'twilio_verify'
+        ? await this.checkTwilioVerifyCode(challenge.phone, dto.code)
+        : this.hashOtp(
+            challenge.phone,
+            PASSWORD_RESET_OTP_PURPOSE,
+            dto.code,
+          ) === challenge.codeHash;
+
+    if (!approved) {
       await this.prisma.authOtpChallenge.update({
         where: { id: challenge.id },
         data: { attempts: { increment: 1 } },
@@ -820,7 +1060,6 @@ export class AuthService {
       throw new BadRequestException('OTP_INVALID');
     }
 
-    const raw = challenge.payload as Record<string, unknown> | null;
     const userId = typeof raw?.userId === 'string' ? raw.userId : '';
     if (!userId)
       throw new BadRequestException('PASSWORD_RESET_PAYLOAD_INVALID');

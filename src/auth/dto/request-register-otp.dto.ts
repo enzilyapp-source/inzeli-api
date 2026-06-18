@@ -1,5 +1,6 @@
 import {
   IsEmail,
+  IsIn,
   IsISO8601,
   IsNotEmpty,
   IsOptional,
@@ -27,4 +28,8 @@ export class RequestRegisterOtpDto {
   @IsOptional()
   @IsISO8601()
   birthDate?: string;
+
+  @IsOptional()
+  @IsIn(['sms', 'call', 'email'])
+  channel?: 'sms' | 'call' | 'email';
 }
