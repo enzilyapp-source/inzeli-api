@@ -341,7 +341,9 @@ export class AuthService {
 
     if (!response.ok) {
       console.error('OTP_VERIFY_SEND_FAILED', channel, response.status, raw);
-      throw new BadRequestException('OTP_SEND_FAILED');
+      throw new BadRequestException(
+        channel === 'call' ? 'OTP_CALL_SEND_FAILED' : 'OTP_SEND_FAILED',
+      );
     }
 
     return {
@@ -424,7 +426,7 @@ export class AuthService {
 
     if (!response.ok) {
       console.error('OTP_EMAIL_SEND_FAILED', response.status, raw);
-      throw new BadRequestException('OTP_SEND_FAILED');
+      throw new BadRequestException('OTP_EMAIL_SEND_FAILED');
     }
 
     return {
@@ -560,15 +562,35 @@ export class AuthService {
     requestedChannel: 'sms' | 'call' | 'email' = 'sms',
   ) {
     if (requestedChannel === 'email') {
-      const emailResult = await this.sendOtpEmail(email, code);
-      await this.recordOtpDelivery(challengeId, emailResult);
-      return emailResult;
+      try {
+        const emailResult = await this.sendOtpEmail(email, code);
+        await this.recordOtpDelivery(challengeId, emailResult);
+        return emailResult;
+      } catch (e) {
+        console.error('OTP_EMAIL_FAILED_TRY_SMS', e);
+        if (phone && this.twilioVerifyConfigured()) {
+          const sms = await this.sendOtpTwilioVerify(phone, 'sms');
+          await this.recordOtpDelivery(challengeId, sms);
+          return sms;
+        }
+        throw e;
+      }
     }
 
     if (requestedChannel === 'call') {
-      const call = await this.sendOtpTwilioVerify(phone, 'call');
-      await this.recordOtpDelivery(challengeId, call);
-      return call;
+      try {
+        const call = await this.sendOtpTwilioVerify(phone, 'call');
+        await this.recordOtpDelivery(challengeId, call);
+        return call;
+      } catch (e) {
+        console.error('OTP_CALL_FAILED_TRY_SMS', e);
+        if (this.twilioVerifyConfigured()) {
+          const sms = await this.sendOtpTwilioVerify(phone, 'sms');
+          await this.recordOtpDelivery(challengeId, sms);
+          return sms;
+        }
+        throw e;
+      }
     }
 
     if (this.twilioVerifyConfigured()) {
@@ -827,12 +849,34 @@ export class AuthService {
       throw e;
     }
 
+    const effectiveVerifier = delivery.verifier ?? verifier;
+    if (
+      effectiveVerifier !== verifier ||
+      delivery.channel !== requestedChannel
+    ) {
+      await this.prisma.authOtpChallenge.update({
+        where: { id: challenge.id },
+        data: {
+          codeHash:
+            effectiveVerifier === 'twilio_verify'
+              ? this.hashOtp(phone, REGISTER_OTP_PURPOSE, 'twilio_verify')
+              : this.hashOtp(phone, REGISTER_OTP_PURPOSE, otp),
+          payload: {
+            ...payload,
+            otpVerifier: effectiveVerifier,
+            otpChannel: delivery.channel,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
+
     return {
       otpRequired: true,
       requestId: challenge.id,
       expiresInSec: ttlSec,
       deliveryChannel: delivery.channel,
-      ...(process.env.AUTH_DEBUG_OTP === 'true' && verifier !== 'twilio_verify'
+      ...(process.env.AUTH_DEBUG_OTP === 'true' &&
+      effectiveVerifier !== 'twilio_verify'
         ? { debugCode: otp }
         : {}),
     };
@@ -971,6 +1015,11 @@ export class AuthService {
 
     const otp = this.generateOtpCode();
     const ttlSec = this.otpTtlSec();
+    const resetPayload = {
+      userId: user.id,
+      otpVerifier: verifier,
+      otpChannel: requestedChannel,
+    };
     const challenge = await this.prisma.authOtpChallenge.create({
       data: {
         phone: challengePhone,
@@ -985,11 +1034,7 @@ export class AuthService {
             : this.hashOtp(challengePhone, PASSWORD_RESET_OTP_PURPOSE, otp),
         expiresAt: new Date(Date.now() + ttlSec * 1000),
         maxAttempts: this.otpMaxAttempts(),
-        payload: {
-          userId: user.id,
-          otpVerifier: verifier,
-          otpChannel: requestedChannel,
-        } as unknown as Prisma.InputJsonValue,
+        payload: resetPayload as unknown as Prisma.InputJsonValue,
       },
       select: { id: true },
     });
@@ -1010,6 +1055,31 @@ export class AuthService {
       throw e;
     }
 
+    const effectiveVerifier = delivery.verifier ?? verifier;
+    if (
+      effectiveVerifier !== verifier ||
+      delivery.channel !== requestedChannel
+    ) {
+      await this.prisma.authOtpChallenge.update({
+        where: { id: challenge.id },
+        data: {
+          codeHash:
+            effectiveVerifier === 'twilio_verify'
+              ? this.hashOtp(
+                  challengePhone,
+                  PASSWORD_RESET_OTP_PURPOSE,
+                  'twilio_verify',
+                )
+              : this.hashOtp(challengePhone, PASSWORD_RESET_OTP_PURPOSE, otp),
+          payload: {
+            ...resetPayload,
+            otpVerifier: effectiveVerifier,
+            otpChannel: delivery.channel,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
+
     const last4 = user.phone?.slice(-4);
     return {
       otpRequired: true,
@@ -1018,7 +1088,8 @@ export class AuthService {
       ...(last4 ? { phoneHint: `****${last4}` } : {}),
       emailHint: email.replace(/^(.{2}).*(@.*)$/, '$1***$2'),
       deliveryChannel: delivery.channel,
-      ...(process.env.AUTH_DEBUG_OTP === 'true' && verifier !== 'twilio_verify'
+      ...(process.env.AUTH_DEBUG_OTP === 'true' &&
+      effectiveVerifier !== 'twilio_verify'
         ? { debugCode: otp }
         : {}),
     };
