@@ -246,6 +246,7 @@ export class SponsorsService {
     });
 
     const userIds = wallets.map((w) => w.userId);
+    const FALLBACK_PEARLS = 5;
 
     // Aggregate wins/losses from matches for those users
     // We count outcomes where Match.sponsorCode=sponsorCode and Match.gameId=gameId
@@ -266,18 +267,38 @@ export class SponsorsService {
     // Build stats
     const stats = new Map<
       string,
-      { wins: number; losses: number; recent: Array<'WIN' | 'LOSS'> }
+      {
+        wins: number;
+        losses: number;
+        playedCount: number;
+        recent: Array<'WIN' | 'LOSS'>;
+        lastOutcome: 'WIN' | 'LOSS' | null;
+        lastPlayedAt: Date | null;
+      }
     >();
 
     for (const uid of userIds) {
-      stats.set(uid, { wins: 0, losses: 0, recent: [] });
+      stats.set(uid, {
+        wins: 0,
+        losses: 0,
+        playedCount: 0,
+        recent: [],
+        lastOutcome: null,
+        lastPlayedAt: null,
+      });
     }
 
     for (const p of parts) {
       const s = stats.get(p.userId);
       if (!s) continue;
+      s.playedCount += 1;
       if (p.outcome === 'WIN') s.wins += 1;
       else s.losses += 1;
+      const playedAt = p.match.createdAt;
+      if (!s.lastPlayedAt || playedAt.getTime() > s.lastPlayedAt.getTime()) {
+        s.lastPlayedAt = playedAt;
+        s.lastOutcome = p.outcome;
+      }
 
       // recent streak (keep last 10 outcomes)
       if (s.recent.length < 10) s.recent.push(p.outcome);
@@ -293,22 +314,69 @@ export class SponsorsService {
       return k;
     };
 
+    const rows = wallets.map((w) => {
+      const s = stats.get(w.userId) ?? {
+        wins: 0,
+        losses: 0,
+        playedCount: 0,
+        recent: [],
+        lastOutcome: null,
+        lastPlayedAt: null,
+      };
+      const streak = computeStreak(s.recent);
+      const pearls = w.pearls ?? FALLBACK_PEARLS;
+      return {
+        userId: w.userId,
+        displayName: w.user?.displayName ?? '',
+        email: w.user?.email ?? '',
+        pearls,
+        played: s.playedCount > 0 || pearls !== FALLBACK_PEARLS,
+        wins: s.wins,
+        losses: s.losses,
+        playedCount: s.playedCount,
+        matches: s.playedCount,
+        streak,
+        fire: streak >= 3, // 🔥 show fire if streak >= 3
+        lastOutcome: s.lastOutcome,
+        lastPlayedAt: s.lastPlayedAt,
+      };
+    });
+
+    rows.sort((a, b) => {
+      if (a.played !== b.played) return a.played ? -1 : 1;
+      if (a.played && b.played) {
+        const pearls = b.pearls - a.pearls;
+        if (pearls !== 0) return pearls;
+        const last =
+          (b.lastPlayedAt?.getTime() ?? 0) - (a.lastPlayedAt?.getTime() ?? 0);
+        if (last !== 0) return last;
+      }
+      return a.displayName.localeCompare(b.displayName);
+    });
+
+    let playedRank = 0;
+
     return {
       sponsor,
       gameId,
-      rows: wallets.map((w, idx) => {
-        const s = stats.get(w.userId) ?? { wins: 0, losses: 0, recent: [] };
-        const streak = computeStreak(s.recent);
+      rows: rows.map((r) => {
+        const rank = r.played ? ++playedRank : null;
         return {
-          rank: idx + 1,
-          userId: w.userId,
-          displayName: w.user?.displayName ?? '',
-          email: w.user?.email ?? '',
-          pearls: w.pearls ?? 0,
-          wins: s.wins,
-          losses: s.losses,
-          streak,
-          fire: streak >= 3, // 🔥 show fire if streak >= 3
+          rank,
+          rankLabel: rank == null ? '--' : String(rank),
+          userId: r.userId,
+          displayName: r.displayName,
+          email: r.email,
+          pearls: r.pearls,
+          played: r.played,
+          wins: r.wins,
+          losses: r.losses,
+          playedCount: r.playedCount,
+          matches: r.matches,
+          streak: r.streak,
+          fire: r.fire,
+          lastOutcome: r.lastOutcome,
+          lastPlayedAt: r.lastPlayedAt?.toISOString() ?? null,
         };
       }),
     };

@@ -5,6 +5,80 @@ import { PrismaService } from '../prisma.service';
 export class LeaderboardService {
   constructor(private prisma: PrismaService) {}
 
+  private buildMatchStats(
+    participants: Array<{
+      userId: string;
+      outcome: unknown;
+      match?: { createdAt: Date } | null;
+    }>,
+  ) {
+    const stats = new Map<
+      string,
+      {
+        wins: number;
+        losses: number;
+        playedCount: number;
+        lastOutcome: 'WIN' | 'LOSS' | null;
+        lastPlayedAt: Date | null;
+      }
+    >();
+
+    for (const p of participants) {
+      const outcome = String(p.outcome).toUpperCase();
+      const playedAt = p.match?.createdAt ?? null;
+      const current = stats.get(p.userId) ?? {
+        wins: 0,
+        losses: 0,
+        playedCount: 0,
+        lastOutcome: null,
+        lastPlayedAt: null,
+      };
+
+      current.playedCount += 1;
+      if (outcome === 'WIN') current.wins += 1;
+      if (outcome === 'LOSS') current.losses += 1;
+      if (
+        playedAt &&
+        (!current.lastPlayedAt ||
+          playedAt.getTime() > current.lastPlayedAt.getTime())
+      ) {
+        current.lastPlayedAt = playedAt;
+        current.lastOutcome =
+          outcome === 'WIN' || outcome === 'LOSS' ? outcome : null;
+      }
+      stats.set(p.userId, current);
+    }
+
+    return stats;
+  }
+
+  private compareLeaderboardRows(
+    a: {
+      played: boolean;
+      pearls: number;
+      wins: number;
+      lastPlayedAt: Date | null;
+      displayName: string;
+    },
+    b: {
+      played: boolean;
+      pearls: number;
+      wins: number;
+      lastPlayedAt: Date | null;
+      displayName: string;
+    },
+  ) {
+    if (a.played !== b.played) return a.played ? -1 : 1;
+    if (a.played && b.played) {
+      const pearls = b.pearls - a.pearls;
+      if (pearls !== 0) return pearls;
+      const last =
+        (b.lastPlayedAt?.getTime() ?? 0) - (a.lastPlayedAt?.getTime() ?? 0);
+      if (last !== 0) return last;
+    }
+    return a.displayName.localeCompare(b.displayName);
+  }
+
   async globalLeaderboard(limit = 50) {
     const users = await this.prisma.user.findMany({
       where: { hideFromLeaderboard: false },
@@ -67,34 +141,70 @@ export class LeaderboardService {
       select: { id: true, displayName: true, email: true },
     });
 
+    const participants = await this.prisma.matchParticipant.findMany({
+      where: { match: { gameId }, user: { hideFromLeaderboard: false } },
+      select: {
+        userId: true,
+        outcome: true,
+        match: { select: { createdAt: true } },
+      },
+      orderBy: { match: { createdAt: 'desc' } },
+      take: 5000,
+    });
+    const stats = this.buildMatchStats(participants);
+
     const rows = everyone.map((u) => {
       const base = walletMap.get(u.id)?.pearls;
+      const pearls = base == null ? FALLBACK_PEARLS : base;
+      const s = stats.get(u.id) ?? {
+        wins: 0,
+        losses: 0,
+        playedCount: 0,
+        lastOutcome: null,
+        lastPlayedAt: null,
+      };
+      const played = s.playedCount > 0 || pearls !== FALLBACK_PEARLS;
       return {
         userId: u.id,
         displayName: u.displayName ?? '',
         email: u.email ?? '',
-        pearls: base == null ? FALLBACK_PEARLS : base,
+        pearls,
+        played,
+        wins: s.wins,
+        losses: s.losses,
+        playedCount: s.playedCount,
+        matches: s.playedCount,
+        lastOutcome: s.lastOutcome,
+        lastPlayedAt: s.lastPlayedAt,
       };
     });
 
-    rows.sort((a, b) => {
-      const p = (b.pearls ?? 0) - (a.pearls ?? 0);
-      if (p !== 0) return p;
-      return a.displayName.localeCompare(b.displayName);
-    });
+    rows.sort((a, b) => this.compareLeaderboardRows(a, b));
 
     const limited = rows.slice(0, Math.max(0, limit));
+    let playedRank = 0;
 
     return {
       scope: 'GAME',
       gameId,
-      rows: limited.map((w, i) => ({
-        rank: i + 1,
-        userId: w.userId,
-        displayName: w.displayName,
-        email: w.email,
-        pearls: w.pearls ?? 0,
-      })),
+      rows: limited.map((w) => {
+        const rank = w.played ? ++playedRank : null;
+        return {
+          rank,
+          rankLabel: rank == null ? '--' : String(rank),
+          played: w.played,
+          userId: w.userId,
+          displayName: w.displayName,
+          email: w.email,
+          pearls: w.pearls ?? 0,
+          wins: w.wins,
+          losses: w.losses,
+          playedCount: w.playedCount,
+          matches: w.matches,
+          lastOutcome: w.lastOutcome,
+          lastPlayedAt: w.lastPlayedAt?.toISOString() ?? null,
+        };
+      }),
     };
   }
 
@@ -130,9 +240,13 @@ export class LeaderboardService {
     }
 
     const participants = await this.prisma.matchParticipant.findMany({
-      where: { match: { sponsorCode, gameId }, user: { hideFromLeaderboard: false } },
+      where: {
+        match: { sponsorCode, gameId },
+        user: { hideFromLeaderboard: false },
+      },
       select: {
         userId: true,
+        outcome: true,
         user: { select: { displayName: true, email: true } },
         match: { select: { createdAt: true } },
       },
@@ -180,31 +294,59 @@ export class LeaderboardService {
       });
     }
 
-    const rows = Array.from(users.entries()).map(([userId, info]) => ({
-      userId,
-      displayName: info.displayName || info.email || userId,
-      email: info.email ?? '',
-      pearls: info.pearls ?? 0,
-    }));
+    const stats = this.buildMatchStats(participants);
 
-    rows.sort((a, b) => {
-      const p = (b.pearls ?? 0) - (a.pearls ?? 0);
-      if (p !== 0) return p;
-      return a.displayName.localeCompare(b.displayName);
+    const rows = Array.from(users.entries()).map(([userId, info]) => {
+      const s = stats.get(userId) ?? {
+        wins: 0,
+        losses: 0,
+        playedCount: 0,
+        lastOutcome: null,
+        lastPlayedAt: null,
+      };
+      const pearls = info.pearls ?? 0;
+      const played = s.playedCount > 0 || pearls !== FALLBACK_PEARLS;
+      return {
+        userId,
+        displayName: info.displayName || info.email || userId,
+        email: info.email ?? '',
+        pearls,
+        played,
+        wins: s.wins,
+        losses: s.losses,
+        playedCount: s.playedCount,
+        matches: s.playedCount,
+        lastOutcome: s.lastOutcome,
+        lastPlayedAt: s.lastPlayedAt,
+      };
     });
 
+    rows.sort((a, b) => this.compareLeaderboardRows(a, b));
+
     const limited = rows.slice(0, Math.max(0, limit));
+    let playedRank = 0;
 
     return {
       sponsor,
       gameId,
-      rows: limited.map((r, i) => ({
-        rank: i + 1,
-        userId: r.userId,
-        displayName: r.displayName,
-        email: r.email,
-        pearls: r.pearls ?? 0,
-      })),
+      rows: limited.map((r) => {
+        const rank = r.played ? ++playedRank : null;
+        return {
+          rank,
+          rankLabel: rank == null ? '--' : String(rank),
+          played: r.played,
+          userId: r.userId,
+          displayName: r.displayName,
+          email: r.email,
+          pearls: r.pearls ?? 0,
+          wins: r.wins,
+          losses: r.losses,
+          playedCount: r.playedCount,
+          matches: r.matches,
+          lastOutcome: r.lastOutcome,
+          lastPlayedAt: r.lastPlayedAt?.toISOString() ?? null,
+        };
+      }),
     };
   }
 }

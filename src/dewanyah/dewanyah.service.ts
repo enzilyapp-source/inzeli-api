@@ -508,6 +508,7 @@ export class DewanyahService {
     });
 
     const userIds = members.map((m) => m.userId);
+    const FALLBACK_PEARLS = 5;
     const walletMap = new Map<string, number>();
     if (selectedGameId && userIds.length > 0) {
       await this.ensureApprovedMemberWallets(
@@ -522,22 +523,112 @@ export class DewanyahService {
       for (const w of wallets) walletMap.set(w.userId, w.pearls ?? 0);
     }
 
-    const rows = members.map((m) => ({
-      userId: m.userId,
-      displayName: m.user?.displayName ?? 'لاعب',
-      email: m.user?.email,
-      pearls: selectedGameId ? (walletMap.get(m.userId) ?? 0) : 0,
-      status: m.status,
-      joinedAt: m.createdAt,
-    }));
+    const playedStats = new Map<
+      string,
+      {
+        wins: number;
+        losses: number;
+        playedCount: number;
+        lastOutcome: 'WIN' | 'LOSS' | null;
+        lastPlayedAt: Date | null;
+      }
+    >();
+    if (userIds.length > 0) {
+      const parts = await this.prisma.matchParticipant.findMany({
+        where: {
+          userId: { in: userIds },
+          match: {
+            ...(selectedGameId ? { gameId: selectedGameId } : {}),
+            room: { is: { dewanyahId } },
+          },
+        },
+        select: {
+          userId: true,
+          outcome: true,
+          match: { select: { createdAt: true } },
+        },
+        orderBy: { match: { createdAt: 'desc' } },
+        take: 5000,
+      });
+
+      for (const p of parts) {
+        const outcome = String(p.outcome).toUpperCase();
+        const playedAt = p.match.createdAt;
+        const current = playedStats.get(p.userId) ?? {
+          wins: 0,
+          losses: 0,
+          playedCount: 0,
+          lastOutcome: null,
+          lastPlayedAt: null,
+        };
+        current.playedCount += 1;
+        if (outcome === 'WIN') current.wins += 1;
+        if (outcome === 'LOSS') current.losses += 1;
+        if (
+          !current.lastPlayedAt ||
+          playedAt.getTime() > current.lastPlayedAt.getTime()
+        ) {
+          current.lastPlayedAt = playedAt;
+          current.lastOutcome =
+            outcome === 'WIN' || outcome === 'LOSS' ? outcome : null;
+        }
+        playedStats.set(p.userId, current);
+      }
+    }
+
+    const rows = members.map((m) => {
+      const pearls = selectedGameId
+        ? (walletMap.get(m.userId) ?? FALLBACK_PEARLS)
+        : 0;
+      const stats = playedStats.get(m.userId) ?? {
+        wins: 0,
+        losses: 0,
+        playedCount: 0,
+        lastOutcome: null,
+        lastPlayedAt: null,
+      };
+      const played =
+        stats.playedCount > 0 ||
+        (selectedGameId ? pearls !== FALLBACK_PEARLS : false);
+      return {
+        userId: m.userId,
+        displayName: m.user?.displayName ?? 'لاعب',
+        email: m.user?.email,
+        pearls,
+        status: m.status,
+        joinedAt: m.createdAt,
+        played,
+        wins: stats.wins,
+        losses: stats.losses,
+        playedCount: stats.playedCount,
+        matches: stats.playedCount,
+        lastOutcome: stats.lastOutcome,
+        lastPlayedAt: stats.lastPlayedAt,
+      };
+    });
 
     rows.sort((a, b) => {
-      const p = (b.pearls ?? 0) - (a.pearls ?? 0);
-      if (p != 0) return p;
+      if (a.played !== b.played) return a.played ? -1 : 1;
+      if (a.played && b.played) {
+        const p = (b.pearls ?? 0) - (a.pearls ?? 0);
+        if (p != 0) return p;
+        const last =
+          (b.lastPlayedAt?.getTime() ?? 0) - (a.lastPlayedAt?.getTime() ?? 0);
+        if (last != 0) return last;
+      }
       return new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
     });
 
-    return rows.slice(0, n);
+    let playedRank = 0;
+    return rows.slice(0, n).map((r) => {
+      const rank = r.played ? ++playedRank : null;
+      return {
+        ...r,
+        rank,
+        rankLabel: rank == null ? '--' : String(rank),
+        lastPlayedAt: r.lastPlayedAt?.toISOString() ?? null,
+      };
+    });
   }
 
   // Admin: create dewanyah directly
