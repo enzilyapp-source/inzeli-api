@@ -4,6 +4,7 @@ import { UsersController } from './users.controller';
 import { AdminUsersController } from './users_admin.controller';
 import { AdminUsersNotificationsController } from './users_notifications_admin.controller';
 import { PrismaService } from '../prisma.service';
+import { SeasonResetService } from './season_reset.service';
 
 @Module({
   controllers: [
@@ -11,6 +12,6 @@ import { PrismaService } from '../prisma.service';
     AdminUsersController,
     AdminUsersNotificationsController,
   ],
-  providers: [PrismaService],
+  providers: [PrismaService, SeasonResetService],
 })
 export class UsersModule {}

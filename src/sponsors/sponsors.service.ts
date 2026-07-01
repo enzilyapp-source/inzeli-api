@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { seasonRange, seasonYm } from '../common/badges';
 
 @Injectable()
 export class SponsorsService {
@@ -227,6 +228,8 @@ export class SponsorsService {
     limit: number;
   }) {
     const { sponsorCode, gameId, limit } = args;
+    const currentYm = seasonYm();
+    const currentRange = seasonRange(currentYm);
 
     // Ensure sponsor & game exist (optional strictness)
     const sponsor = await this.prisma.sponsor.findUnique({
@@ -253,7 +256,11 @@ export class SponsorsService {
     const parts = await this.prisma.matchParticipant.findMany({
       where: {
         userId: { in: userIds },
-        match: { sponsorCode, gameId },
+        match: {
+          sponsorCode,
+          gameId,
+          createdAt: { gte: currentRange.gte, lt: currentRange.lt },
+        },
       },
       select: {
         userId: true,
@@ -324,13 +331,16 @@ export class SponsorsService {
         lastPlayedAt: null,
       };
       const streak = computeStreak(s.recent);
-      const pearls = w.pearls ?? FALLBACK_PEARLS;
+      const pearls =
+        w.seasonYm === currentYm
+          ? (w.pearls ?? FALLBACK_PEARLS)
+          : FALLBACK_PEARLS;
       return {
         userId: w.userId,
         displayName: w.user?.displayName ?? '',
         email: w.user?.email ?? '',
         pearls,
-        played: s.playedCount > 0 || pearls !== FALLBACK_PEARLS,
+        played: s.playedCount > 0,
         wins: s.wins,
         losses: s.losses,
         playedCount: s.playedCount,

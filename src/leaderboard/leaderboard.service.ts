@@ -1,9 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { seasonRange, seasonYm } from '../common/badges';
 
 @Injectable()
 export class LeaderboardService {
   constructor(private prisma: PrismaService) {}
+
+  private currentSeason() {
+    const ym = seasonYm();
+    return { ym, range: seasonRange(ym) };
+  }
 
   private buildMatchStats(
     participants: Array<{
@@ -115,6 +121,7 @@ export class LeaderboardService {
     });
 
     const FALLBACK_PEARLS = 5;
+    const currentSeason = this.currentSeason();
 
     const wallets = await this.prisma.userGameWallet.findMany({
       where: { gameId, user: { hideFromLeaderboard: false } },
@@ -126,11 +133,17 @@ export class LeaderboardService {
 
     const walletMap = new Map<
       string,
-      { pearls: number; displayName: string; email: string }
+      {
+        pearls: number;
+        seasonYm: number | null;
+        displayName: string;
+        email: string;
+      }
     >();
     for (const w of wallets) {
       walletMap.set(w.userId, {
         pearls: w.pearls ?? 0,
+        seasonYm: w.seasonYm ?? null,
         displayName: w.user?.displayName ?? '',
         email: w.user?.email ?? '',
       });
@@ -142,7 +155,16 @@ export class LeaderboardService {
     });
 
     const participants = await this.prisma.matchParticipant.findMany({
-      where: { match: { gameId }, user: { hideFromLeaderboard: false } },
+      where: {
+        match: {
+          gameId,
+          createdAt: {
+            gte: currentSeason.range.gte,
+            lt: currentSeason.range.lt,
+          },
+        },
+        user: { hideFromLeaderboard: false },
+      },
       select: {
         userId: true,
         outcome: true,
@@ -154,7 +176,9 @@ export class LeaderboardService {
     const stats = this.buildMatchStats(participants);
 
     const rows = everyone.map((u) => {
-      const base = walletMap.get(u.id)?.pearls;
+      const wallet = walletMap.get(u.id);
+      const base =
+        wallet?.seasonYm === currentSeason.ym ? wallet.pearls : undefined;
       const pearls = base == null ? FALLBACK_PEARLS : base;
       const s = stats.get(u.id) ?? {
         wins: 0,
@@ -163,7 +187,7 @@ export class LeaderboardService {
         lastOutcome: null,
         lastPlayedAt: null,
       };
-      const played = s.playedCount > 0 || pearls !== FALLBACK_PEARLS;
+      const played = s.playedCount > 0;
       return {
         userId: u.id,
         displayName: u.displayName ?? '',
@@ -219,6 +243,7 @@ export class LeaderboardService {
     });
     if (!sponsor) throw new NotFoundException('SPONSOR_NOT_FOUND');
     const FALLBACK_PEARLS = 5; // الظهور الأولي بدون محفظة/مشاركة
+    const currentSeason = this.currentSeason();
 
     // 1) اجمع كل من عنده محفظة + كل من لعب مباراة لهذا السبونسر/اللعبة
     const wallets = await this.prisma.sponsorGameWallet.findMany({
@@ -229,11 +254,17 @@ export class LeaderboardService {
     });
     const walletMap = new Map<
       string,
-      { pearls: number; displayName: string; email: string }
+      {
+        pearls: number;
+        seasonYm: number | null;
+        displayName: string;
+        email: string;
+      }
     >();
     for (const w of wallets) {
       walletMap.set(w.userId, {
         pearls: w.pearls ?? 0,
+        seasonYm: w.seasonYm ?? null,
         displayName: w.user?.displayName ?? '',
         email: w.user?.email ?? '',
       });
@@ -241,7 +272,14 @@ export class LeaderboardService {
 
     const participants = await this.prisma.matchParticipant.findMany({
       where: {
-        match: { sponsorCode, gameId },
+        match: {
+          sponsorCode,
+          gameId,
+          createdAt: {
+            gte: currentSeason.range.gte,
+            lt: currentSeason.range.lt,
+          },
+        },
         user: { hideFromLeaderboard: false },
       },
       select: {
@@ -264,14 +302,17 @@ export class LeaderboardService {
       users.set(uid, {
         displayName: info.displayName,
         email: info.email,
-        pearls: info.pearls,
+        pearls:
+          info.seasonYm === currentSeason.ym ? info.pearls : FALLBACK_PEARLS,
       });
     }
 
     // add participants (حتى لو ما عنده محفظة)
     for (const p of participants) {
       if (users.has(p.userId)) continue;
-      const base = walletMap.get(p.userId)?.pearls;
+      const wallet = walletMap.get(p.userId);
+      const base =
+        wallet?.seasonYm === currentSeason.ym ? wallet.pearls : undefined;
       users.set(p.userId, {
         displayName: p.user?.displayName ?? '',
         email: p.user?.email ?? '',
@@ -286,7 +327,9 @@ export class LeaderboardService {
     });
     for (const u of everyone) {
       if (users.has(u.id)) continue;
-      const base = walletMap.get(u.id)?.pearls;
+      const wallet = walletMap.get(u.id);
+      const base =
+        wallet?.seasonYm === currentSeason.ym ? wallet.pearls : undefined;
       users.set(u.id, {
         displayName: u.displayName ?? '',
         email: u.email ?? '',
@@ -305,7 +348,7 @@ export class LeaderboardService {
         lastPlayedAt: null,
       };
       const pearls = info.pearls ?? 0;
-      const played = s.playedCount > 0 || pearls !== FALLBACK_PEARLS;
+      const played = s.playedCount > 0;
       return {
         userId,
         displayName: info.displayName || info.email || userId,

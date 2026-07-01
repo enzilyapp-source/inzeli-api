@@ -4,6 +4,7 @@ import { AdminGuard } from '../auth/admin.guard';
 import { err, ok } from '../common/api';
 import { PrismaService } from '../prisma.service';
 import { seasonRange } from '../common/badges';
+import { SeasonResetService } from './season_reset.service';
 
 type BroadcastBody = {
   titleAr?: string;
@@ -19,6 +20,12 @@ type MonthlyLeaderboardBody = {
   dryRun?: boolean;
 };
 
+type SeasonResetBody = {
+  dryRun?: boolean;
+  force?: boolean;
+  sendPush?: boolean;
+};
+
 @Controller('admin/notifications')
 @UseGuards(AuthGuard('jwt'), AdminGuard)
 export class AdminUsersNotificationsController {
@@ -26,7 +33,10 @@ export class AdminUsersNotificationsController {
   private readonly oneSignalRestApiKey =
     process.env.ONESIGNAL_REST_API_KEY || '';
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly seasonReset: SeasonResetService,
+  ) {}
 
   @Post('broadcast')
   async broadcast(@Body() body: BroadcastBody) {
@@ -39,57 +49,42 @@ export class AdminUsersNotificationsController {
       return err('Missing title or message', 'MISSING_FIELDS');
     }
 
-    if (!this.oneSignalAppId || !this.oneSignalRestApiKey) {
-      return err('Missing OneSignal env', 'ONESIGNAL_ENV_MISSING');
-    }
-
-    const payload = {
-      app_id: this.oneSignalAppId,
-      included_segments: ['All'],
-      channel_for_external_user_ids: 'push',
-      headings: {
-        ar: titleAr,
-        en: titleEn || titleAr,
-      },
-      contents: {
-        ar: messageAr,
-        en: messageEn || messageAr,
-      },
+    const result = await this.seasonReset.sendBroadcast({
+      titleAr,
+      messageAr,
+      titleEn,
+      messageEn,
       data: {
         type: 'admin_broadcast',
         ...(body?.data ?? {}),
       },
-      ios_badgeType: 'Increase',
-      ios_badgeCount: 1,
-    };
-
-    const res = await fetch('https://onesignal.com/api/v1/notifications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${this.oneSignalRestApiKey}`,
-      },
-      body: JSON.stringify(payload),
     });
 
-    const raw = await res.text();
-    let parsed: any = null;
-    try {
-      parsed = raw ? JSON.parse(raw) : null;
-    } catch {
-      parsed = raw;
+    if (!result.sent) {
+      return err(result.error || 'Push failed', 'ONESIGNAL_SEND_FAILED');
     }
 
-    if (!res.ok) {
-      const errorMessage =
-        parsed?.errors?.[0] ||
-        parsed?.error ||
-        parsed?.message ||
-        'Push failed';
-      return err(String(errorMessage), 'ONESIGNAL_SEND_FAILED');
-    }
+    return ok('Broadcast sent', result.response ?? result);
+  }
 
-    return ok('Broadcast sent', parsed ?? payload);
+  @Post('season-ended')
+  async seasonEndedNotice() {
+    const result = await this.seasonReset.sendSeasonEndedNotice();
+    if (!result.sent) {
+      return err(result.error || 'Push failed', 'ONESIGNAL_SEND_FAILED');
+    }
+    return ok('Season ended notification sent', result.response ?? result);
+  }
+
+  @Post('season-reset')
+  async seasonResetNow(@Body() body: SeasonResetBody) {
+    const result = await this.seasonReset.runMonthlySeasonReset({
+      dryRun: body?.dryRun === true,
+      force: body?.force === true,
+      sendPush: body?.sendPush !== false,
+      source: 'admin',
+    });
+    return ok('Season reset handled', result);
   }
 
   @Post('monthly-leaderboards')
@@ -311,8 +306,8 @@ export class AdminUsersNotificationsController {
   }) {
     const payload = {
       app_id: this.oneSignalAppId,
-      include_external_user_ids: [params.userId],
-      channel_for_external_user_ids: 'push',
+      target_channel: 'push',
+      include_aliases: { external_id: [params.userId] },
       headings: { ar: params.titleAr, en: params.titleAr },
       contents: { ar: params.messageAr, en: params.messageAr },
       data: params.data,
@@ -320,11 +315,11 @@ export class AdminUsersNotificationsController {
       ios_badgeCount: 1,
     };
 
-    const res = await fetch('https://onesignal.com/api/v1/notifications', {
+    const res = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Basic ${this.oneSignalRestApiKey}`,
+        Authorization: `Key ${this.oneSignalRestApiKey}`,
       },
       body: JSON.stringify(payload),
     });

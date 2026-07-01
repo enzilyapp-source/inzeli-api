@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { getDewanyahPearls } from '../common/pearls';
 import { PrismaService } from '../prisma.service';
+import { seasonRange, seasonYm } from '../common/badges';
 
 @Injectable()
 export class DewanyahService {
@@ -493,6 +494,7 @@ export class DewanyahService {
       throw new Error('GAME_NOT_IN_DEWANYAH');
     }
     const selectedGameId = requestedGameId || null;
+    const currentRange = seasonRange(seasonYm());
 
     const members = await this.prisma.dewanyahMember.findMany({
       where: {
@@ -509,7 +511,8 @@ export class DewanyahService {
 
     const userIds = members.map((m) => m.userId);
     const FALLBACK_PEARLS = 5;
-    const walletMap = new Map<string, number>();
+    const currentYm = seasonYm();
+    const walletMap = new Map<string, { pearls: number; seasonYm: number }>();
     if (selectedGameId && userIds.length > 0) {
       await this.ensureApprovedMemberWallets(
         dewanyahId,
@@ -518,9 +521,14 @@ export class DewanyahService {
       );
       const wallets = await this.prisma.dewanyahGameWallet.findMany({
         where: { dewanyahId, gameId: selectedGameId, userId: { in: userIds } },
-        select: { userId: true, pearls: true },
+        select: { userId: true, pearls: true, seasonYm: true },
       });
-      for (const w of wallets) walletMap.set(w.userId, w.pearls ?? 0);
+      for (const w of wallets) {
+        walletMap.set(w.userId, {
+          pearls: w.pearls ?? FALLBACK_PEARLS,
+          seasonYm: w.seasonYm ?? 0,
+        });
+      }
     }
 
     const playedStats = new Map<
@@ -539,6 +547,7 @@ export class DewanyahService {
           userId: { in: userIds },
           match: {
             ...(selectedGameId ? { gameId: selectedGameId } : {}),
+            createdAt: { gte: currentRange.gte, lt: currentRange.lt },
             room: { is: { dewanyahId } },
           },
         },
@@ -577,9 +586,13 @@ export class DewanyahService {
     }
 
     const rows = members.map((m) => {
-      const pearls = selectedGameId
-        ? (walletMap.get(m.userId) ?? FALLBACK_PEARLS)
-        : 0;
+      const wallet = selectedGameId ? walletMap.get(m.userId) : null;
+      const pearls =
+        selectedGameId && wallet?.seasonYm === currentYm
+          ? wallet.pearls
+          : selectedGameId
+            ? FALLBACK_PEARLS
+            : 0;
       const stats = playedStats.get(m.userId) ?? {
         wins: 0,
         losses: 0,
@@ -587,9 +600,7 @@ export class DewanyahService {
         lastOutcome: null,
         lastPlayedAt: null,
       };
-      const played =
-        stats.playedCount > 0 ||
-        (selectedGameId ? pearls !== FALLBACK_PEARLS : false);
+      const played = stats.playedCount > 0;
       return {
         userId: m.userId,
         displayName: m.user?.displayName ?? 'لاعب',
