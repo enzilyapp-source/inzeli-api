@@ -20,7 +20,6 @@ type PushResult = {
 
 type OneSignalPlayer = {
   id?: string;
-  notification_types?: number | string | null;
 };
 
 @Injectable()
@@ -412,12 +411,12 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
     firstResult: PushResult,
   ): Promise<PushResult> {
     try {
-      const subscriptionIds = await this.listSubscribedOneSignalPlayers();
+      const subscriptionIds = await this.listOneSignalPlayerIds();
       if (!subscriptionIds.length) {
         return {
           sent: false,
           error:
-            'ONESIGNAL_NO_SUBSCRIBED_PLAYERS. Check that ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY belong to the same OneSignal app that has subscribed devices.',
+            'ONESIGNAL_NO_DEVICE_RECORDS. Check that ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY belong to the same OneSignal app that has subscribed devices.',
           response: firstResult.response,
         };
       }
@@ -449,7 +448,7 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async listSubscribedOneSignalPlayers() {
+  private async listOneSignalPlayerIds() {
     const ids: string[] = [];
     const limit = 300;
     let offset = 0;
@@ -492,11 +491,11 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
           ? parsed.total_count
           : totalCount;
 
-      for (const player of players) {
-        const id = (player.id || '').trim();
-        if (!id) continue;
-        if (Number(player.notification_types) > 0) ids.push(id);
-      }
+      ids.push(
+        ...players
+          .map((player) => (player.id || '').trim())
+          .filter((id) => id.length > 0),
+      );
 
       if (!players.length || players.length < limit) break;
       offset += limit;
