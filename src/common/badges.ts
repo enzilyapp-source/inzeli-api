@@ -176,8 +176,19 @@ export async function awardBadgesForBalance(
 
 export async function badgeSnapshot(tx: TxLike, userId: string) {
   const client = tx as any;
+  const playedMatches = await client.match.findMany({
+    where: { parts: { some: { userId } } },
+    distinct: ['gameId'],
+    select: { gameId: true },
+  });
+  const playedGames = playedMatches
+    .map((match: { gameId?: string | null }) => match.gameId)
+    .filter((gameId: string | null | undefined): gameId is string =>
+      Boolean(gameId),
+    );
+
   const rows = await client.userBadge.findMany({
-    where: { userId },
+    where: { userId, gameId: { in: playedGames } },
     orderBy: [{ threshold: 'asc' }, { lastEarnedAt: 'desc' }],
   });
 
@@ -203,5 +214,6 @@ export async function badgeSnapshot(tx: TxLike, userId: string) {
     badges: rows,
     badgeCounts: counts,
     bestBadge: best,
+    playedGames,
   };
 }
