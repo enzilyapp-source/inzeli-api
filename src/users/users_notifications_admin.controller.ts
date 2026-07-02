@@ -40,6 +40,7 @@ export class AdminUsersNotificationsController {
 
   @Get('status')
   async status() {
+    const audience = await this.oneSignalAudienceSnapshot();
     return ok('OneSignal status', {
       appIdConfigured: Boolean(this.oneSignalAppId),
       restApiKeyConfigured: Boolean(this.oneSignalRestApiKey),
@@ -47,6 +48,7 @@ export class AdminUsersNotificationsController {
         ? `${this.oneSignalAppId.slice(0, 8)}...${this.oneSignalAppId.slice(-4)}`
         : null,
       targetSegment: 'Subscribed Users',
+      audience,
     });
   }
 
@@ -342,5 +344,66 @@ export class AdminUsersNotificationsController {
     }
 
     return true;
+  }
+
+  private async oneSignalAudienceSnapshot() {
+    if (!this.oneSignalAppId || !this.oneSignalRestApiKey) {
+      return null;
+    }
+
+    try {
+      const url = new URL('https://onesignal.com/api/v1/players');
+      url.searchParams.set('app_id', this.oneSignalAppId);
+      url.searchParams.set('limit', '50');
+      url.searchParams.set('offset', '0');
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Key ${this.oneSignalRestApiKey}`,
+        },
+      });
+      const raw = await res.text();
+      let parsed: any = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch {
+        parsed = null;
+      }
+
+      if (!res.ok || !parsed) {
+        return {
+          ok: false,
+          error:
+            parsed?.errors?.[0] ||
+            parsed?.error ||
+            parsed?.message ||
+            raw.slice(0, 160) ||
+            `OneSignal status ${res.status}`,
+        };
+      }
+
+      const players = Array.isArray(parsed.players) ? parsed.players : [];
+      const subscribed = players.filter(
+        (player: any) => Number(player?.notification_types) > 0,
+      ).length;
+      const channels = players.reduce(
+        (acc: Record<string, number>, player: any) => {
+          const key = String(player?.device_type ?? 'unknown');
+          acc[key] = (acc[key] ?? 0) + 1;
+          return acc;
+        },
+        {},
+      );
+
+      return {
+        ok: true,
+        totalCount: Number(parsed.total_count ?? players.length),
+        sampled: players.length,
+        subscribedSample: subscribed,
+        unsubscribedSample: players.length - subscribed,
+        channels,
+      };
+    } catch (error: any) {
+      return { ok: false, error: error?.message || String(error) };
+    }
   }
 }
