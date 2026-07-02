@@ -18,6 +18,11 @@ type PushResult = {
   error?: string;
 };
 
+type OneSignalPlayer = {
+  id?: string;
+  notification_types?: number | string | null;
+};
+
 @Injectable()
 export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
   private resetTimer?: NodeJS.Timeout;
@@ -79,7 +84,12 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
       ios_badgeCount: 1,
     };
 
-    return this.sendOneSignal(payload);
+    const result = await this.sendOneSignal(payload);
+    if (result.sent || !this.shouldRetryWithSubscriptions(result.error)) {
+      return result;
+    }
+
+    return this.sendOneSignalToSubscribedPlayers(payload, result);
   }
 
   async sendSeasonEndedNotice() {
@@ -386,5 +396,113 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
     } catch (error: any) {
       return { sent: false, error: error?.message || String(error) };
     }
+  }
+
+  private shouldRetryWithSubscriptions(error?: string) {
+    const normalized = (error || '').toLowerCase();
+    return (
+      normalized.includes('not subscribed') ||
+      normalized.includes('no valid push subscriptions') ||
+      normalized.includes('no subscribers')
+    );
+  }
+
+  private async sendOneSignalToSubscribedPlayers(
+    originalPayload: Record<string, unknown>,
+    firstResult: PushResult,
+  ): Promise<PushResult> {
+    try {
+      const subscriptionIds = await this.listSubscribedOneSignalPlayers();
+      if (!subscriptionIds.length) {
+        return {
+          sent: false,
+          error:
+            'ONESIGNAL_NO_SUBSCRIBED_PLAYERS. Check that ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY belong to the same OneSignal app that has subscribed devices.',
+          response: firstResult.response,
+        };
+      }
+
+      const payload = {
+        ...originalPayload,
+        include_subscription_ids: subscriptionIds,
+      };
+      delete (payload as any).included_segments;
+
+      const result = await this.sendOneSignal(payload);
+      if (result.sent && result.response && typeof result.response === 'object') {
+        return {
+          sent: true,
+          response: {
+            ...(result.response as Record<string, unknown>),
+            directRecipients: subscriptionIds.length,
+            fallbackTarget: 'include_subscription_ids',
+          },
+        };
+      }
+      return result;
+    } catch (error: any) {
+      return {
+        sent: false,
+        error: error?.message || String(error),
+        response: firstResult.response,
+      };
+    }
+  }
+
+  private async listSubscribedOneSignalPlayers() {
+    const ids: string[] = [];
+    const limit = 300;
+    let offset = 0;
+    let totalCount: number | undefined;
+
+    while (ids.length < 2000) {
+      const url = new URL('https://onesignal.com/api/v1/players');
+      url.searchParams.set('app_id', this.oneSignalAppId);
+      url.searchParams.set('limit', String(limit));
+      url.searchParams.set('offset', String(offset));
+
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Key ${this.oneSignalRestApiKey}`,
+        },
+      });
+      const raw = await res.text();
+      let parsed: any = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch {
+        parsed = null;
+      }
+
+      if (!res.ok || !parsed) {
+        const message =
+          parsed?.errors?.[0] ||
+          parsed?.error ||
+          parsed?.message ||
+          raw.slice(0, 160) ||
+          `OneSignal players failed (${res.status})`;
+        throw new Error(String(message));
+      }
+
+      const players: OneSignalPlayer[] = Array.isArray(parsed.players)
+        ? parsed.players
+        : [];
+      totalCount =
+        typeof parsed.total_count === 'number'
+          ? parsed.total_count
+          : totalCount;
+
+      for (const player of players) {
+        const id = (player.id || '').trim();
+        if (!id) continue;
+        if (Number(player.notification_types) > 0) ids.push(id);
+      }
+
+      if (!players.length || players.length < limit) break;
+      offset += limit;
+      if (totalCount !== undefined && offset >= totalCount) break;
+    }
+
+    return ids.slice(0, 2000);
   }
 }
