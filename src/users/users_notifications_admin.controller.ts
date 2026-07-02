@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from '../auth/admin.guard';
 import { err, ok } from '../common/api';
@@ -37,6 +37,18 @@ export class AdminUsersNotificationsController {
     private readonly prisma: PrismaService,
     private readonly seasonReset: SeasonResetService,
   ) {}
+
+  @Get('status')
+  async status() {
+    return ok('OneSignal status', {
+      appIdConfigured: Boolean(this.oneSignalAppId),
+      restApiKeyConfigured: Boolean(this.oneSignalRestApiKey),
+      appId: this.oneSignalAppId
+        ? `${this.oneSignalAppId.slice(0, 8)}...${this.oneSignalAppId.slice(-4)}`
+        : null,
+      targetSegment: 'Subscribed Users',
+    });
+  }
 
   @Post('broadcast')
   async broadcast(@Body() body: BroadcastBody) {

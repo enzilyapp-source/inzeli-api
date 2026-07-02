@@ -369,6 +369,19 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
         return { sent: false, error: String(message), response: parsed };
       }
 
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        typeof (parsed as any).id !== 'string' ||
+        !(parsed as any).id
+      ) {
+        const message =
+          (parsed as any)?.errors?.[0] ||
+          (parsed as any)?.error ||
+          'OneSignal accepted the request but did not create a notification. The target audience may have no valid push subscriptions.';
+        return { sent: false, error: String(message), response: parsed };
+      }
+
       return { sent: true, response: parsed };
     } catch (error: any) {
       return { sent: false, error: error?.message || String(error) };
