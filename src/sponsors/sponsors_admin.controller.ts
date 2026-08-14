@@ -13,6 +13,13 @@ import { ok, err } from '../common/api';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from '../auth/admin.guard';
 
+function toNumberOrUndefined(v: unknown) {
+  if (v == null) return undefined;
+  if (typeof v === 'string' && v.trim().length === 0) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 @Controller('admin/sponsors')
 export class SponsorsAdminController {
   constructor(private readonly sponsors: SponsorsService) {}
@@ -34,7 +41,17 @@ export class SponsorsAdminController {
       const code = (body?.code ?? '').trim();
       const name = (body?.name ?? '').trim();
       if (!code || !name) return err('code/name required', 'VALIDATION');
-      const s = await this.sponsors.createSponsor(code, name);
+      const s = await this.sponsors.createSponsor(code, name, {
+        imageUrl: body?.imageUrl,
+        themePrimary: body?.themePrimary,
+        themeAccent: body?.themeAccent,
+        locationLock: body?.locationLock,
+        radiusMeters: toNumberOrUndefined(
+          body?.lockRadius ?? body?.radiusMeters,
+        ),
+        anchorLat: toNumberOrUndefined(body?.anchorLat ?? body?.lockLat),
+        anchorLng: toNumberOrUndefined(body?.anchorLng ?? body?.lockLng),
+      });
       return ok('Created sponsor', s);
     } catch (e: any) {
       return err(e?.message || 'Failed');
@@ -50,6 +67,12 @@ export class SponsorsAdminController {
         imageUrl: body?.imageUrl,
         themePrimary: body?.themePrimary,
         themeAccent: body?.themeAccent,
+        locationLock: body?.locationLock,
+        radiusMeters: toNumberOrUndefined(
+          body?.lockRadius ?? body?.radiusMeters,
+        ),
+        anchorLat: toNumberOrUndefined(body?.anchorLat ?? body?.lockLat),
+        anchorLng: toNumberOrUndefined(body?.anchorLng ?? body?.lockLng),
       };
       const s = await this.sponsors.updateSponsor(code, data);
       return ok('Updated sponsor', s);
@@ -78,6 +101,32 @@ export class SponsorsAdminController {
       if (!gameId) return err('gameId required', 'VALIDATION');
       const g = await this.sponsors.addGameToSponsor(code, gameId, prizeAmount);
       return ok('Game added', g);
+    } catch (e: any) {
+      return err(e?.message || 'Failed');
+    }
+  }
+
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
+  @Get(':code/monthly-leaders')
+  async monthlyLeaders(@Param('code') code: string) {
+    try {
+      return ok(
+        'Sponsor monthly leaders',
+        await this.sponsors.currentMonthlyLeadersForSponsor(code),
+      );
+    } catch (e: any) {
+      return err(e?.message || 'Failed');
+    }
+  }
+
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
+  @Post(':code/monthly-leaders/snapshot')
+  async snapshotMonthlyLeaders(@Param('code') code: string) {
+    try {
+      return ok(
+        'Sponsor monthly leaders snapshot saved',
+        await this.sponsors.snapshotSponsorMonthlyLeaders(code),
+      );
     } catch (e: any) {
       return err(e?.message || 'Failed');
     }

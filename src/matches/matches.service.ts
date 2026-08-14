@@ -16,6 +16,15 @@ import {
   decGamePearls,
   decSponsorPearls,
   decDewanyahPearls,
+  getGameBadgeScore,
+  getSponsorBadgeScore,
+  getDewanyahBadgeScore,
+  recordGameBadgeWin,
+  recordSponsorBadgeWin,
+  recordDewanyahBadgeWin,
+  recordGameBadgeLoss,
+  recordSponsorBadgeLoss,
+  recordDewanyahBadgeLoss,
 } from '../common/pearls';
 import {
   awardBadgesForBalance,
@@ -120,15 +129,29 @@ export class MatchesService {
         const badgeSeason = seasonYm(match.createdAt);
         const participants = Array.from(new Set([...winners, ...losers]));
 
-        const readPearls = async (userId: string) => {
-          if (sc) return getSponsorPearls(tx, userId, sc, game);
+        const readBadgeScore = async (userId: string) => {
+          if (sc) return getSponsorBadgeScore(tx, userId, sc, game);
           if (dewanyahId)
-            return getDewanyahPearls(tx, userId, dewanyahId, game);
-          return getGamePearls(tx, userId, game);
+            return getDewanyahBadgeScore(tx, userId, dewanyahId, game);
+          return getGameBadgeScore(tx, userId, game);
+        };
+
+        const recordBadgeWin = async (userId: string, amount = 1) => {
+          if (sc) return recordSponsorBadgeWin(tx, userId, sc, game, amount);
+          if (dewanyahId)
+            return recordDewanyahBadgeWin(tx, userId, dewanyahId, game, amount);
+          return recordGameBadgeWin(tx, userId, game, amount);
+        };
+
+        const recordBadgeLoss = async (userId: string) => {
+          if (sc) return recordSponsorBadgeLoss(tx, userId, sc, game);
+          if (dewanyahId)
+            return recordDewanyahBadgeLoss(tx, userId, dewanyahId, game);
+          return recordGameBadgeLoss(tx, userId, game);
         };
 
         for (const userId of participants) {
-          const balance = await readPearls(userId);
+          const balance = await readBadgeScore(userId);
           await awardBadgesForBalance(tx, {
             userId,
             balance,
@@ -142,6 +165,7 @@ export class MatchesService {
         let pot = 0;
         for (const lo of losers) {
           try {
+            await recordBadgeLoss(lo);
             if (sc) {
               const cur = await getSponsorPearls(tx, lo, sc, game);
               if (cur > 0) {
@@ -166,6 +190,10 @@ export class MatchesService {
           }
         }
 
+        for (const userId of winners) {
+          await recordBadgeWin(userId, 1);
+        }
+
         // وزّع الـ pot على الفائزين بالتساوي (باقي الزيادة لأول فائز)
         if (pot > 0 && winners.length > 0) {
           const per = Math.floor(pot / winners.length);
@@ -182,7 +210,7 @@ export class MatchesService {
         }
 
         for (const userId of winners) {
-          const balance = await readPearls(userId);
+          const balance = await readBadgeScore(userId);
           await awardBadgesForBalance(tx, {
             userId,
             balance,

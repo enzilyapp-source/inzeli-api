@@ -20,6 +20,7 @@ export class AdminUsersController {
     id: true,
     publicId: true,
     email: true,
+    phone: true,
     displayName: true,
     createdAt: true,
     permanentScore: true,
@@ -53,6 +54,7 @@ export class AdminUsersController {
         ? {
             OR: [
               { email: { contains: query } },
+              { phone: { contains: query } },
               { displayName: { contains: query } },
               { id: { contains: query } },
               { publicId: { contains: query } },

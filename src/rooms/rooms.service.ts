@@ -52,7 +52,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
   private reminderTicker?: NodeJS.Timeout;
   private readonly lastReminderAt = new Map<string, number>();
   private static readonly REMINDER_SCAN_MS = 60 * 1000;
-  private static readonly REMINDER_INTERVAL_MS = 3 * 60 * 1000;
+  private static readonly REMINDER_INTERVAL_MS = 10 * 60 * 1000;
   private static readonly REMINDER_LINES = [
     'للحينكم تلعبون؟',
     'شلون اللعب؟',
@@ -92,6 +92,11 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     return (
       list[Math.floor(Math.random() * list.length)] ?? 'تم تذكيركم بحسم النتيجة'
     );
+  }
+
+  private normalizeRadius(value?: number | null) {
+    if (value == null || !Number.isFinite(value)) return DEFAULT_RADIUS_METERS;
+    return Math.max(1, Math.trunc(value));
   }
 
   private async sendPushReminder(params: {
@@ -432,6 +437,55 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       create: { id: gameId, name: gameId, category: 'عام' },
     });
 
+    let roomLat: number | null = lat ?? null;
+    let roomLng: number | null = lng ?? null;
+    let roomRadius = this.normalizeRadius(radiusMeters);
+
+    if (sponsorCode) {
+      const sponsor = await this.prisma.sponsor.findUnique({
+        where: { code: sponsorCode },
+        select: {
+          code: true,
+          active: true,
+          locationLock: true,
+          anchorLat: true,
+          anchorLng: true,
+          radiusMeters: true,
+          SponsorGame: {
+            where: { gameId },
+            select: { gameId: true },
+            take: 1,
+          },
+        },
+      });
+      if (!sponsor || !sponsor.active) {
+        throw new NotFoundException('SPONSOR_NOT_FOUND');
+      }
+      if (!sponsor.SponsorGame.length) {
+        throw new BadRequestException('GAME_NOT_IN_SPONSOR');
+      }
+      if (sponsor.locationLock) {
+        if (sponsor.anchorLat == null || sponsor.anchorLng == null) {
+          throw new BadRequestException('SPONSOR_LOCATION_NOT_SET');
+        }
+        const lockedRadius = this.normalizeRadius(sponsor.radiusMeters);
+        if (lat != null && lng != null) {
+          const dist = haversineMeters(
+            sponsor.anchorLat,
+            sponsor.anchorLng,
+            lat,
+            lng,
+          );
+          if (dist > lockedRadius) {
+            throw new BadRequestException('TOO_FAR');
+          }
+        }
+        roomLat = sponsor.anchorLat;
+        roomLng = sponsor.anchorLng;
+        roomRadius = lockedRadius;
+      }
+    }
+
     if (dewanyahId) {
       const active = await this.findActiveRoomForUser(hostId);
       if (active?.room?.code) {
@@ -447,7 +501,8 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
         if (
           activeRoom &&
           activeRoom.status &&
-          (activeRoom.status === 'waiting' || activeRoom.status === 'running') &&
+          (activeRoom.status === 'waiting' ||
+            activeRoom.status === 'running') &&
           activeRoom.dewanyahId === dewanyahId &&
           activeRoom.gameId === gameId
         ) {
@@ -465,6 +520,10 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
           id: true,
           status: true,
           ownerUserId: true,
+          locationLock: true,
+          anchorLat: true,
+          anchorLng: true,
+          radiusMeters: true,
           games: { select: { gameId: true } },
         },
       });
@@ -492,6 +551,22 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       if (allowedGames.length > 0 && !allowedGames.includes(gameId)) {
         throw new BadRequestException('GAME_NOT_IN_DEWANYAH');
       }
+
+      if (dew.locationLock) {
+        if (dew.anchorLat == null || dew.anchorLng == null) {
+          throw new BadRequestException('DEWANYAH_LOCATION_NOT_SET');
+        }
+        const lockedRadius = this.normalizeRadius(dew.radiusMeters);
+        if (lat != null && lng != null) {
+          const dist = haversineMeters(dew.anchorLat, dew.anchorLng, lat, lng);
+          if (dist > lockedRadius) {
+            throw new BadRequestException('TOO_FAR');
+          }
+        }
+        roomLat = dew.anchorLat;
+        roomLng = dew.anchorLng;
+        roomRadius = lockedRadius;
+      }
     }
 
     // unique code
@@ -508,9 +583,9 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
           code,
           gameId,
           hostUserId: hostId,
-          hostLat: lat ?? null,
-          hostLng: lng ?? null,
-          radiusMeters: radiusMeters ?? DEFAULT_RADIUS_METERS,
+          hostLat: roomLat,
+          hostLng: roomLng,
+          radiusMeters: roomRadius,
           status: 'waiting',
           allowZeroCredit: true,
           ...(sponsorCode ? { sponsorCode } : {}),
@@ -610,12 +685,14 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('ROOM_LOCKED');
     }
 
+    let lockedDewanyahLocation = false;
     if (room.dewanyahId) {
       const dew = await this.prisma.dewanyah.findUnique({
         where: { id: room.dewanyahId },
-        select: { ownerUserId: true },
+        select: { ownerUserId: true, locationLock: true },
       });
       if (!dew) throw new NotFoundException('DEWANYAH_NOT_FOUND');
+      lockedDewanyahLocation = dew.locationLock === true;
       if (dew.ownerUserId !== userId) {
         const member = await this.prisma.dewanyahMember.findUnique({
           where: {
@@ -636,9 +713,9 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     if (room.hostLat != null && room.hostLng != null) {
       if (lat == null || lng == null) {
         // Backward-compatibility: older released builds may not send location
-        // when joining dewanyah rooms. Keep dewanyah play working for current
-        // players, while general rooms still require location as before.
-        if (!room.dewanyahId) {
+        // when joining unlocked dewanyah rooms. Location-locked boards and
+        // general/sponsor rooms still require coordinates.
+        if (!room.dewanyahId || lockedDewanyahLocation) {
           throw new BadRequestException('NEED_LOCATION');
         }
       } else {

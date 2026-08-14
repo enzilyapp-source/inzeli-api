@@ -1,11 +1,12 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { $Enums, Prisma } from '@prisma/client';
 import {
   awardBadgesForBalance,
   badgeContext,
   seasonRange,
   seasonYm,
 } from '../common/badges';
+import { isBadgeLossBufferEnabled } from '../common/pearls';
 import { PrismaService } from '../prisma.service';
 
 const RESET_PEARLS = 5;
@@ -126,6 +127,7 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
       const force = options?.force === true;
       const sendPush = options?.sendPush !== false;
       const source = options?.source ?? 'admin';
+      const badgeLossBufferEnabled = isBadgeLossBufferEnabled();
 
       const existing = await this.prisma.timelineEvent.findFirst({
         where: {
@@ -144,7 +146,7 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
         };
       }
 
-      const preview = await this.previewResetCounts(ym);
+      const preview = await this.previewResetCounts(ym, badgeLossBufferEnabled);
       if (dryRun) {
         return { dryRun: true, seasonYm: ym, ...preview };
       }
@@ -153,20 +155,26 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
         async (tx) => {
           let badgeAwards = 0;
           const earnedAt = new Date();
+          const badgeAwardWhere = badgeLossBufferEnabled
+            ? { badgeScore: { gt: RESET_PEARLS } }
+            : { pearls: { gt: RESET_PEARLS } };
 
           const userWallets = await tx.userGameWallet.findMany({
-            where: { pearls: { gt: RESET_PEARLS } },
+            where: badgeAwardWhere,
             select: {
               userId: true,
               gameId: true,
               pearls: true,
+              badgeScore: true,
               seasonYm: true,
             },
           });
           for (const wallet of userWallets) {
             badgeAwards += await awardBadgesForBalance(tx, {
               userId: wallet.userId,
-              balance: wallet.pearls,
+              balance: badgeLossBufferEnabled
+                ? wallet.badgeScore
+                : wallet.pearls,
               seasonYm: wallet.seasonYm ?? ym,
               earnedAt,
               context: badgeContext({ gameId: wallet.gameId }),
@@ -174,19 +182,22 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
           }
 
           const sponsorWallets = await tx.sponsorGameWallet.findMany({
-            where: { pearls: { gt: RESET_PEARLS } },
+            where: badgeAwardWhere,
             select: {
               userId: true,
               sponsorCode: true,
               gameId: true,
               pearls: true,
+              badgeScore: true,
               seasonYm: true,
             },
           });
           for (const wallet of sponsorWallets) {
             badgeAwards += await awardBadgesForBalance(tx, {
               userId: wallet.userId,
-              balance: wallet.pearls,
+              balance: badgeLossBufferEnabled
+                ? wallet.badgeScore
+                : wallet.pearls,
               seasonYm: wallet.seasonYm ?? ym,
               earnedAt,
               context: badgeContext({
@@ -197,19 +208,22 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
           }
 
           const dewanyahWallets = await tx.dewanyahGameWallet.findMany({
-            where: { pearls: { gt: RESET_PEARLS } },
+            where: badgeAwardWhere,
             select: {
               userId: true,
               dewanyahId: true,
               gameId: true,
               pearls: true,
+              badgeScore: true,
               seasonYm: true,
             },
           });
           for (const wallet of dewanyahWallets) {
             badgeAwards += await awardBadgesForBalance(tx, {
               userId: wallet.userId,
-              balance: wallet.pearls,
+              balance: badgeLossBufferEnabled
+                ? wallet.badgeScore
+                : wallet.pearls,
               seasonYm: wallet.seasonYm ?? ym,
               earnedAt,
               context: badgeContext({
@@ -218,6 +232,12 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
               }),
             });
           }
+
+          const leaderSnapshots = await this.snapshotScopedMonthlyLeaders(
+            tx,
+            ym,
+            source === 'auto' ? 'season_reset_auto' : 'season_reset_admin',
+          );
 
           const [
             users,
@@ -233,13 +253,28 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
               },
             }),
             tx.userGameWallet.updateMany({
-              data: { pearls: RESET_PEARLS, seasonYm: ym },
+              data: {
+                pearls: RESET_PEARLS,
+                badgeScore: RESET_PEARLS,
+                badgeLossCount: 0,
+                seasonYm: ym,
+              },
             }),
             tx.sponsorGameWallet.updateMany({
-              data: { pearls: RESET_PEARLS, seasonYm: ym },
+              data: {
+                pearls: RESET_PEARLS,
+                badgeScore: RESET_PEARLS,
+                badgeLossCount: 0,
+                seasonYm: ym,
+              },
             }),
             tx.dewanyahGameWallet.updateMany({
-              data: { pearls: RESET_PEARLS, seasonYm: ym },
+              data: {
+                pearls: RESET_PEARLS,
+                badgeScore: RESET_PEARLS,
+                badgeLossCount: 0,
+                seasonYm: ym,
+              },
             }),
           ]);
 
@@ -255,6 +290,7 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
                 userGameWalletsUpdated: userGameWallets.count,
                 sponsorGameWalletsUpdated: sponsorGameWallets.count,
                 dewanyahGameWalletsUpdated: dewanyahGameWallets.count,
+                leaderSnapshots,
               } as Prisma.InputJsonValue,
             },
             select: { id: true },
@@ -268,6 +304,7 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
             userGameWalletsUpdated: userGameWallets.count,
             sponsorGameWalletsUpdated: sponsorGameWallets.count,
             dewanyahGameWalletsUpdated: dewanyahGameWallets.count,
+            leaderSnapshots,
           };
         },
         { timeout: 60_000 },
@@ -280,7 +317,13 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async previewResetCounts(ym: number) {
+  private async previewResetCounts(
+    ym: number,
+    badgeLossBufferEnabled = isBadgeLossBufferEnabled(),
+  ) {
+    const badgeAwardWhere = badgeLossBufferEnabled
+      ? { badgeScore: { gt: RESET_PEARLS } }
+      : { pearls: { gt: RESET_PEARLS } };
     const [
       users,
       usersNeedingReset,
@@ -305,30 +348,45 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
       this.prisma.userGameWallet.count(),
       this.prisma.userGameWallet.count({
         where: {
-          OR: [{ pearls: { not: RESET_PEARLS } }, { seasonYm: { not: ym } }],
+          OR: [
+            { pearls: { not: RESET_PEARLS } },
+            { badgeScore: { not: RESET_PEARLS } },
+            { badgeLossCount: { not: 0 } },
+            { seasonYm: { not: ym } },
+          ],
         },
       }),
       this.prisma.sponsorGameWallet.count(),
       this.prisma.sponsorGameWallet.count({
         where: {
-          OR: [{ pearls: { not: RESET_PEARLS } }, { seasonYm: { not: ym } }],
+          OR: [
+            { pearls: { not: RESET_PEARLS } },
+            { badgeScore: { not: RESET_PEARLS } },
+            { badgeLossCount: { not: 0 } },
+            { seasonYm: { not: ym } },
+          ],
         },
       }),
       this.prisma.dewanyahGameWallet.count(),
       this.prisma.dewanyahGameWallet.count({
         where: {
-          OR: [{ pearls: { not: RESET_PEARLS } }, { seasonYm: { not: ym } }],
+          OR: [
+            { pearls: { not: RESET_PEARLS } },
+            { badgeScore: { not: RESET_PEARLS } },
+            { badgeLossCount: { not: 0 } },
+            { seasonYm: { not: ym } },
+          ],
         },
       }),
       Promise.all([
         this.prisma.userGameWallet.count({
-          where: { pearls: { gt: RESET_PEARLS } },
+          where: badgeAwardWhere,
         }),
         this.prisma.sponsorGameWallet.count({
-          where: { pearls: { gt: RESET_PEARLS } },
+          where: badgeAwardWhere,
         }),
         this.prisma.dewanyahGameWallet.count({
-          where: { pearls: { gt: RESET_PEARLS } },
+          where: badgeAwardWhere,
         }),
       ]).then((counts) => counts.reduce((sum, count) => sum + count, 0)),
     ]);
@@ -345,6 +403,246 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
       dewanyahGameWalletsNeedingReset,
       badgeEligibleWallets,
     };
+  }
+
+  private async snapshotScopedMonthlyLeaders(
+    tx: Prisma.TransactionClient,
+    ym: number,
+    reason: string,
+  ) {
+    const range = seasonRange(ym);
+    const snapshots: Array<{
+      scope: $Enums.BadgeScope;
+      seasonYm: number;
+      sponsorCode?: string;
+      sponsorName?: string;
+      dewanyahId?: string;
+      dewanyahName?: string;
+      gameId: string;
+      leaderUserId: string;
+      leaderName: string;
+      leaderEmail?: string | null;
+      pearls: number;
+      wins: number;
+      losses: number;
+      playedCount: number;
+      reason: string;
+    }> = [];
+
+    const sponsorGames = await tx.sponsorGame.findMany({
+      include: {
+        sponsor: { select: { code: true, name: true } },
+      },
+      orderBy: [{ sponsorCode: 'asc' }, { gameId: 'asc' }],
+    });
+    for (const sg of sponsorGames) {
+      const wallets = await tx.sponsorGameWallet.findMany({
+        where: {
+          sponsorCode: sg.sponsorCode,
+          gameId: sg.gameId,
+          user: { hideFromLeaderboard: false },
+        },
+        include: {
+          user: { select: { id: true, displayName: true, email: true } },
+        },
+        orderBy: [{ pearls: 'desc' }, { updatedAt: 'desc' }],
+        take: 100,
+      });
+      const userIds = wallets.map((w) => w.userId);
+      if (!userIds.length) continue;
+      const stats = await this.matchStatsForUsers(tx, {
+        userIds,
+        gameId: sg.gameId,
+        sponsorCode: sg.sponsorCode,
+        range,
+      });
+      const leader = wallets
+        .map((w) => {
+          const stat = stats.get(w.userId) ?? this.emptyMatchStats();
+          return {
+            userId: w.userId,
+            displayName:
+              w.user?.displayName?.trim() || w.user?.email?.trim() || 'لاعب',
+            email: w.user?.email ?? null,
+            pearls: w.seasonYm === ym ? w.pearls : RESET_PEARLS,
+            ...stat,
+          };
+        })
+        .filter((row) => row.playedCount > 0)
+        .sort((a, b) => {
+          const pearls = b.pearls - a.pearls;
+          if (pearls !== 0) return pearls;
+          return (
+            (b.lastPlayedAt?.getTime() ?? 0) - (a.lastPlayedAt?.getTime() ?? 0)
+          );
+        })[0];
+      if (!leader) continue;
+      snapshots.push({
+        scope: $Enums.BadgeScope.SPONSOR,
+        seasonYm: ym,
+        sponsorCode: sg.sponsorCode,
+        sponsorName: sg.sponsor?.name ?? sg.sponsorCode,
+        gameId: sg.gameId,
+        leaderUserId: leader.userId,
+        leaderName: leader.displayName,
+        leaderEmail: leader.email,
+        pearls: leader.pearls,
+        wins: leader.wins,
+        losses: leader.losses,
+        playedCount: leader.playedCount,
+        reason,
+      });
+    }
+
+    const dewanyahGames = await tx.dewanyahGame.findMany({
+      include: {
+        dewanyah: { select: { id: true, name: true } },
+      },
+      orderBy: [{ dewanyahId: 'asc' }, { gameId: 'asc' }],
+    });
+    for (const dg of dewanyahGames) {
+      const members = await tx.dewanyahMember.findMany({
+        where: {
+          dewanyahId: dg.dewanyahId,
+          status: 'approved',
+          user: { hideFromLeaderboard: false },
+        },
+        include: {
+          user: { select: { id: true, displayName: true, email: true } },
+        },
+      });
+      const userIds = members.map((m) => m.userId);
+      if (!userIds.length) continue;
+      const wallets = await tx.dewanyahGameWallet.findMany({
+        where: {
+          dewanyahId: dg.dewanyahId,
+          gameId: dg.gameId,
+          userId: { in: userIds },
+        },
+        select: { userId: true, pearls: true, seasonYm: true, updatedAt: true },
+      });
+      const walletMap = new Map(wallets.map((w) => [w.userId, w]));
+      const stats = await this.matchStatsForUsers(tx, {
+        userIds,
+        gameId: dg.gameId,
+        dewanyahId: dg.dewanyahId,
+        range,
+      });
+      const leader = members
+        .map((m) => {
+          const wallet = walletMap.get(m.userId);
+          const stat = stats.get(m.userId) ?? this.emptyMatchStats();
+          return {
+            userId: m.userId,
+            displayName:
+              m.user?.displayName?.trim() || m.user?.email?.trim() || 'لاعب',
+            email: m.user?.email ?? null,
+            pearls: wallet?.seasonYm === ym ? wallet.pearls : RESET_PEARLS,
+            joinedAt: m.createdAt,
+            ...stat,
+          };
+        })
+        .filter((row) => row.playedCount > 0)
+        .sort((a, b) => {
+          const pearls = b.pearls - a.pearls;
+          if (pearls !== 0) return pearls;
+          return (
+            (b.lastPlayedAt?.getTime() ?? 0) - (a.lastPlayedAt?.getTime() ?? 0)
+          );
+        })[0];
+      if (!leader) continue;
+      snapshots.push({
+        scope: $Enums.BadgeScope.DEWANYAH,
+        seasonYm: ym,
+        dewanyahId: dg.dewanyahId,
+        dewanyahName: dg.dewanyah?.name ?? 'ديوانية',
+        gameId: dg.gameId,
+        leaderUserId: leader.userId,
+        leaderName: leader.displayName,
+        leaderEmail: leader.email,
+        pearls: leader.pearls,
+        wins: leader.wins,
+        losses: leader.losses,
+        playedCount: leader.playedCount,
+        reason,
+      });
+    }
+
+    if (snapshots.length > 0) {
+      await tx.monthlyLeaderboardSnapshot.createMany({ data: snapshots });
+    }
+
+    return snapshots.length;
+  }
+
+  private emptyMatchStats() {
+    return {
+      wins: 0,
+      losses: 0,
+      playedCount: 0,
+      lastPlayedAt: null as Date | null,
+    };
+  }
+
+  private async matchStatsForUsers(
+    tx: Prisma.TransactionClient,
+    params: {
+      userIds: string[];
+      gameId: string;
+      sponsorCode?: string;
+      dewanyahId?: string;
+      range: { gte: Date; lt: Date };
+    },
+  ) {
+    const stats = new Map<
+      string,
+      {
+        wins: number;
+        losses: number;
+        playedCount: number;
+        lastPlayedAt: Date | null;
+      }
+    >();
+    for (const userId of params.userIds)
+      stats.set(userId, this.emptyMatchStats());
+
+    const parts = await tx.matchParticipant.findMany({
+      where: {
+        userId: { in: params.userIds },
+        match: {
+          gameId: params.gameId,
+          createdAt: params.range,
+          ...(params.sponsorCode ? { sponsorCode: params.sponsorCode } : {}),
+          ...(params.dewanyahId
+            ? { room: { is: { dewanyahId: params.dewanyahId } } }
+            : {}),
+        },
+      },
+      select: {
+        userId: true,
+        outcome: true,
+        match: { select: { createdAt: true } },
+      },
+      orderBy: { match: { createdAt: 'desc' } },
+      take: 5000,
+    });
+
+    for (const part of parts) {
+      const row = stats.get(part.userId) ?? this.emptyMatchStats();
+      row.playedCount += 1;
+      if (part.outcome === 'WIN') row.wins += 1;
+      if (part.outcome === 'LOSS') row.losses += 1;
+      const playedAt = part.match.createdAt;
+      if (
+        !row.lastPlayedAt ||
+        playedAt.getTime() > row.lastPlayedAt.getTime()
+      ) {
+        row.lastPlayedAt = playedAt;
+      }
+      stats.set(part.userId, row);
+    }
+
+    return stats;
   }
 
   private async sendOneSignal(
@@ -428,7 +726,11 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
       delete (payload as any).included_segments;
 
       const result = await this.sendOneSignal(payload);
-      if (result.sent && result.response && typeof result.response === 'object') {
+      if (
+        result.sent &&
+        result.response &&
+        typeof result.response === 'object'
+      ) {
         return {
           sent: true,
           response: {

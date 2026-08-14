@@ -3,16 +3,24 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
+import { rateLimitMiddleware } from './common/rate-limit.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const express = app.getHttpAdapter().getInstance();
+  express.set('trust proxy', 1);
+  const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
   // ✅ أمان: يضيف هيدرات HTTP مهمة
   app.use(helmet());
+  app.use(rateLimitMiddleware);
 
-  // ✅ CORS: يسمح فقط لدومين واجهتك (نتلايفاي)
+  // ✅ CORS: يمكن تضييقه من Render عبر CORS_ORIGINS=domain1,domain2
   app.enableCors({
-    origin: true,
+    origin: corsOrigins.length > 0 ? corsOrigins : true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });

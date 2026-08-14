@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { $Enums } from '@prisma/client';
 import { getDewanyahPearls } from '../common/pearls';
 import { PrismaService } from '../prisma.service';
 import { seasonRange, seasonYm } from '../common/badges';
@@ -34,6 +35,30 @@ export class DewanyahService {
   private normalizePrizeAmount(value: number | undefined) {
     if (value == null || !Number.isFinite(value)) return undefined;
     return Math.max(0, Math.trunc(value));
+  }
+
+  private normalizeRadius(value: number | undefined) {
+    if (value == null || !Number.isFinite(value)) return undefined;
+    return Math.max(1, Math.trunc(value));
+  }
+
+  private locationPayload(data?: {
+    locationLock?: boolean;
+    radiusMeters?: number;
+    anchorLat?: number;
+    anchorLng?: number;
+  }) {
+    const payload: any = {};
+    if (!data) return payload;
+    if (data.locationLock !== undefined) {
+      payload.locationLock = data.locationLock === true;
+    }
+    if (data.anchorLat !== undefined) payload.anchorLat = data.anchorLat;
+    if (data.anchorLng !== undefined) payload.anchorLng = data.anchorLng;
+    if (data.radiusMeters !== undefined) {
+      payload.radiusMeters = this.normalizeRadius(data.radiusMeters) ?? null;
+    }
+    return payload;
   }
 
   private get oneSignalAppId() {
@@ -124,6 +149,9 @@ export class DewanyahService {
       radiusMeters,
     } = params;
     const normalizedPrizeAmount = this.normalizePrizeAmount(prizeAmount);
+    if (locationLock === true && (anchorLat == null || anchorLng == null)) {
+      throw new BadRequestException('DEWANYAH_LOCATION_REQUIRED');
+    }
     return this.prisma.dewanyahRequest.create({
       data: {
         userId,
@@ -136,7 +164,7 @@ export class DewanyahService {
         anchorLng,
         requireApproval: requireApproval ?? true,
         locationLock: locationLock ?? false,
-        radiusMeters,
+        radiusMeters: this.normalizeRadius(radiusMeters),
       },
     });
   }
@@ -169,13 +197,20 @@ export class DewanyahService {
   }
 
   async listAllAdmin() {
-    return this.prisma.dewanyah.findMany({
+    const rows = await this.prisma.dewanyah.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         games: { select: { gameId: true } },
         _count: { select: { members: true } },
       },
     });
+
+    return Promise.all(
+      rows.map(async (d) => ({
+        ...d,
+        monthlyLeaders: await this.currentMonthlyLeadersForDewanyah(d.id),
+      })),
+    );
   }
 
   async approveRequest(requestId: string, adminUserId?: string) {
@@ -256,11 +291,31 @@ export class DewanyahService {
       imageUrl?: string;
       themePrimary?: string;
       themeAccent?: string;
+      locationLock?: boolean;
+      radiusMeters?: number;
+      anchorLat?: number;
+      anchorLng?: number;
     },
   ) {
     const updates: any = { ...data };
     if (data.prizeAmount !== undefined) {
       updates.prizeAmount = this.normalizePrizeAmount(data.prizeAmount) ?? 0;
+    }
+    Object.assign(updates, this.locationPayload(data));
+    delete updates.radiusMeters;
+    if (data.radiusMeters !== undefined) {
+      updates.radiusMeters = this.normalizeRadius(data.radiusMeters) ?? null;
+    }
+    if (data.locationLock === true) {
+      const current = await this.prisma.dewanyah.findUnique({
+        where: { id },
+        select: { anchorLat: true, anchorLng: true },
+      });
+      const lat = data.anchorLat ?? current?.anchorLat;
+      const lng = data.anchorLng ?? current?.anchorLng;
+      if (lat == null || lng == null) {
+        throw new BadRequestException('DEWANYAH_LOCATION_REQUIRED');
+      }
     }
     return this.prisma.dewanyah.update({
       where: { id },
@@ -269,7 +324,70 @@ export class DewanyahService {
   }
 
   async deleteDewanyah(id: string) {
+    await this.snapshotDewanyahMonthlyLeaders(id, 'dewanyah_deleted');
     return this.prisma.dewanyah.delete({ where: { id } });
+  }
+
+  async currentMonthlyLeadersForDewanyah(dewanyahId: string) {
+    const dew = await this.prisma.dewanyah.findUnique({
+      where: { id: dewanyahId },
+      select: {
+        id: true,
+        name: true,
+        games: {
+          select: { gameId: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!dew) throw new Error('Dewanyah not found');
+
+    const ym = seasonYm();
+    return Promise.all(
+      dew.games.map(async (g) => {
+        const rows = await this.leaderboard(dewanyahId, 1, g.gameId);
+        const leader = rows.find((r) => r.rank === 1) ?? null;
+        return {
+          seasonYm: ym,
+          gameId: g.gameId,
+          leader,
+        };
+      }),
+    );
+  }
+
+  async snapshotDewanyahMonthlyLeaders(dewanyahId: string, reason = 'manual') {
+    const dew = await this.prisma.dewanyah.findUnique({
+      where: { id: dewanyahId },
+      select: { id: true, name: true },
+    });
+    if (!dew) throw new Error('Dewanyah not found');
+
+    const ym = seasonYm();
+    const leaders = await this.currentMonthlyLeadersForDewanyah(dewanyahId);
+    const rows = leaders
+      .filter((item) => item.leader)
+      .map((item) => ({
+        scope: $Enums.BadgeScope.DEWANYAH,
+        seasonYm: ym,
+        dewanyahId: dew.id,
+        dewanyahName: dew.name,
+        gameId: item.gameId,
+        leaderUserId: item.leader!.userId,
+        leaderName: item.leader!.displayName,
+        leaderEmail: item.leader!.email ?? null,
+        pearls: item.leader!.pearls ?? 0,
+        wins: item.leader!.wins ?? 0,
+        losses: item.leader!.losses ?? 0,
+        playedCount: item.leader!.playedCount ?? 0,
+        reason,
+      }));
+
+    if (rows.length > 0) {
+      await this.prisma.monthlyLeaderboardSnapshot.createMany({ data: rows });
+    }
+
+    return { seasonYm: ym, count: rows.length, leaders };
   }
 
   async getOwnerDewanyah(dewanyahId: string, ownerUserId: string) {
@@ -677,6 +795,9 @@ export class DewanyahService {
       themePrimary,
       themeAccent,
     } = data;
+    if (locationLock === true && (anchorLat == null || anchorLng == null)) {
+      throw new BadRequestException('DEWANYAH_LOCATION_REQUIRED');
+    }
     let ownerId = ownerUserId;
     if (!ownerId && ownerEmail) {
       const user = await this.prisma.user.findUnique({
@@ -696,7 +817,7 @@ export class DewanyahService {
       note,
       requireApproval: requireApproval ?? true,
       locationLock: locationLock ?? false,
-      radiusMeters,
+      radiusMeters: this.normalizeRadius(radiusMeters),
       games: { create: [{ gameId }] },
       members:
         ownerUserId != null

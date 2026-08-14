@@ -15,6 +15,8 @@ import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from '../auth/admin.guard';
 
 function toNumberOrUndefined(v: unknown) {
+  if (v == null) return undefined;
+  if (typeof v === 'string' && v.trim().length === 0) return undefined;
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
 }
@@ -102,7 +104,9 @@ export class AdminDewanyahController {
         gameId,
         requireApproval: body?.requireApproval,
         locationLock: body?.locationLock,
-        radiusMeters: body?.lockRadius ?? body?.radiusMeters,
+        radiusMeters: toNumberOrUndefined(
+          body?.lockRadius ?? body?.radiusMeters,
+        ),
         anchorLat: toNumberOrUndefined(body?.anchorLat ?? body?.lockLat),
         anchorLng: toNumberOrUndefined(body?.anchorLng ?? body?.lockLng),
         imageUrl: body?.imageUrl,
@@ -129,6 +133,12 @@ export class AdminDewanyahController {
         imageUrl: body?.imageUrl,
         themePrimary: body?.themePrimary,
         themeAccent: body?.themeAccent,
+        locationLock: body?.locationLock,
+        radiusMeters: toNumberOrUndefined(
+          body?.lockRadius ?? body?.radiusMeters,
+        ),
+        anchorLat: toNumberOrUndefined(body?.anchorLat ?? body?.lockLat),
+        anchorLng: toNumberOrUndefined(body?.anchorLng ?? body?.lockLng),
       };
       const r = await this.dewanyah.updateDewanyah(id, data);
       return ok('Updated dewanyah', r);
@@ -144,6 +154,32 @@ export class AdminDewanyahController {
     try {
       await this.dewanyah.deleteDewanyah(id);
       return ok('Deleted dewanyah', { id });
+    } catch (e: any) {
+      return err(e?.message || 'Failed', e?.message);
+    }
+  }
+
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
+  @Get(':id/monthly-leaders')
+  async monthlyLeaders(@Param('id') id: string) {
+    try {
+      return ok(
+        'Dewanyah monthly leaders',
+        await this.dewanyah.currentMonthlyLeadersForDewanyah(id),
+      );
+    } catch (e: any) {
+      return err(e?.message || 'Failed', e?.message);
+    }
+  }
+
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
+  @Post(':id/monthly-leaders/snapshot')
+  async snapshotMonthlyLeaders(@Param('id') id: string) {
+    try {
+      return ok(
+        'Dewanyah monthly leaders snapshot saved',
+        await this.dewanyah.snapshotDewanyahMonthlyLeaders(id),
+      );
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);
     }

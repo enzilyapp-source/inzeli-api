@@ -127,6 +127,16 @@ function oneSignalApiKey() {
   return (process.env.ONESIGNAL_REST_API_KEY ?? '').trim();
 }
 
+function isBadgeLossBufferEnabled() {
+  const raw =
+    [
+      process.env.BADGE_LOSS_BUFFER_ENABLED,
+      process.env.BADGE_PROGRESS_MODE,
+    ].find((value) => value?.trim()) ?? '';
+  const value = raw.trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on', 'buffered'].includes(value);
+}
+
 async function sendOneSignalNotification(params: {
   recipients: string[];
   headingAr: string;
@@ -197,6 +207,7 @@ function pickChampion<T extends ChampionCandidate>(
 async function main() {
   const nowYm = seasonYm();
   const closingSeason = previousSeasonInfo();
+  const badgeLossBufferEnabled = isBadgeLossBufferEnabled();
   console.log(
     `Resetting all pearls to ${RESET_PEARLS} (seasonYm=${nowYm}) after closing season ${closingSeason.ym}...`,
   );
@@ -271,7 +282,13 @@ async function main() {
               : 'GENERAL';
         for (const part of match.parts) {
           seasonParticipants.add(part.userId);
-          addParticipant(participantScopes, scope, contextId, gameId, part.userId);
+          addParticipant(
+            participantScopes,
+            scope,
+            contextId,
+            gameId,
+            part.userId,
+          );
         }
       }
 
@@ -487,14 +504,24 @@ async function main() {
         }
       }
 
+      const badgeAwardWhere = badgeLossBufferEnabled
+        ? { badgeScore: { gt: RESET_PEARLS } }
+        : { pearls: { gt: RESET_PEARLS } };
+
       const userGameBadgeWallets = await tx.userGameWallet.findMany({
-        where: { pearls: { gt: RESET_PEARLS } },
-        select: { userId: true, gameId: true, pearls: true, seasonYm: true },
+        where: badgeAwardWhere,
+        select: {
+          userId: true,
+          gameId: true,
+          pearls: true,
+          badgeScore: true,
+          seasonYm: true,
+        },
       });
       for (const wallet of userGameBadgeWallets) {
         badgeAwards += await awardBadgesForBalance(tx, {
           userId: wallet.userId,
-          balance: wallet.pearls,
+          balance: badgeLossBufferEnabled ? wallet.badgeScore : wallet.pearls,
           seasonYm: wallet.seasonYm ?? nowYm,
           earnedAt,
           context: badgeContext({ gameId: wallet.gameId }),
@@ -502,19 +529,20 @@ async function main() {
       }
 
       const sponsorGameBadgeWallets = await tx.sponsorGameWallet.findMany({
-        where: { pearls: { gt: RESET_PEARLS } },
+        where: badgeAwardWhere,
         select: {
           userId: true,
           sponsorCode: true,
           gameId: true,
           pearls: true,
+          badgeScore: true,
           seasonYm: true,
         },
       });
       for (const wallet of sponsorGameBadgeWallets) {
         badgeAwards += await awardBadgesForBalance(tx, {
           userId: wallet.userId,
-          balance: wallet.pearls,
+          balance: badgeLossBufferEnabled ? wallet.badgeScore : wallet.pearls,
           seasonYm: wallet.seasonYm ?? nowYm,
           earnedAt,
           context: badgeContext({
@@ -525,19 +553,20 @@ async function main() {
       }
 
       const dewanyahGameBadgeWallets = await tx.dewanyahGameWallet.findMany({
-        where: { pearls: { gt: RESET_PEARLS } },
+        where: badgeAwardWhere,
         select: {
           userId: true,
           dewanyahId: true,
           gameId: true,
           pearls: true,
+          badgeScore: true,
           seasonYm: true,
         },
       });
       for (const wallet of dewanyahGameBadgeWallets) {
         badgeAwards += await awardBadgesForBalance(tx, {
           userId: wallet.userId,
-          balance: wallet.pearls,
+          balance: badgeLossBufferEnabled ? wallet.badgeScore : wallet.pearls,
           seasonYm: wallet.seasonYm ?? nowYm,
           earnedAt,
           context: badgeContext({
@@ -556,15 +585,30 @@ async function main() {
       });
 
       const userGameWallets = await tx.userGameWallet.updateMany({
-        data: { pearls: RESET_PEARLS, seasonYm: nowYm },
+        data: {
+          pearls: RESET_PEARLS,
+          badgeScore: RESET_PEARLS,
+          badgeLossCount: 0,
+          seasonYm: nowYm,
+        },
       });
 
       const sponsorGameWallets = await tx.sponsorGameWallet.updateMany({
-        data: { pearls: RESET_PEARLS, seasonYm: nowYm },
+        data: {
+          pearls: RESET_PEARLS,
+          badgeScore: RESET_PEARLS,
+          badgeLossCount: 0,
+          seasonYm: nowYm,
+        },
       });
 
       const dewanyahGameWallets = await tx.dewanyahGameWallet.updateMany({
-        data: { pearls: RESET_PEARLS, seasonYm: nowYm },
+        data: {
+          pearls: RESET_PEARLS,
+          badgeScore: RESET_PEARLS,
+          badgeLossCount: 0,
+          seasonYm: nowYm,
+        },
       });
 
       return {
@@ -592,7 +636,9 @@ async function main() {
     `✓ Dewanyah game wallets updated: ${result.dewanyahGameWallets.count}`,
   );
   console.log(`✓ Badge awards snapshotted: ${result.badgeAwards}`);
-  console.log(`✓ Season first-place awards created: ${result.seasonChampionAwards}`);
+  console.log(
+    `✓ Season first-place awards created: ${result.seasonChampionAwards}`,
+  );
   console.log('Done.');
 }
 

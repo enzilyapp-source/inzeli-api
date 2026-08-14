@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { $Enums } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { seasonRange, seasonYm } from '../common/badges';
 
@@ -6,30 +11,110 @@ import { seasonRange, seasonYm } from '../common/badges';
 export class SponsorsService {
   constructor(private prisma: PrismaService) {}
 
+  private normalizeRadius(value: number | undefined) {
+    if (value == null || !Number.isFinite(value)) return undefined;
+    return Math.max(1, Math.trunc(value));
+  }
+
+  private locationPayload(data?: {
+    locationLock?: boolean;
+    radiusMeters?: number;
+    anchorLat?: number;
+    anchorLng?: number;
+  }) {
+    const payload: any = {};
+    if (!data) return payload;
+    if (data.locationLock !== undefined) {
+      payload.locationLock = data.locationLock === true;
+    }
+    if (data.anchorLat !== undefined) payload.anchorLat = data.anchorLat;
+    if (data.anchorLng !== undefined) payload.anchorLng = data.anchorLng;
+    if (data.radiusMeters !== undefined) {
+      payload.radiusMeters = this.normalizeRadius(data.radiusMeters) ?? null;
+    }
+    return payload;
+  }
+
   async listSponsors() {
     return this.prisma.sponsor.findMany({
       where: { active: true },
       orderBy: { name: 'asc' },
-      select: { code: true, name: true, active: true },
+      select: {
+        code: true,
+        name: true,
+        active: true,
+        imageUrl: true,
+        themePrimary: true,
+        themeAccent: true,
+        locationLock: true,
+        anchorLat: true,
+        anchorLng: true,
+        radiusMeters: true,
+      },
     });
   }
 
   // Admin list with games
   async listSponsorsWithGames() {
-    return this.prisma.sponsor.findMany({
+    const sponsors = await this.prisma.sponsor.findMany({
       orderBy: { name: 'asc' },
       include: {
         SponsorGame: { select: { gameId: true, prizeAmount: true } },
       },
     });
+
+    return Promise.all(
+      sponsors.map(async (s) => ({
+        ...s,
+        monthlyLeaders: await this.currentMonthlyLeadersForSponsor(s.code),
+      })),
+    );
   }
 
   // Admin: create sponsor
-  async createSponsor(code: string, name: string) {
+  async createSponsor(
+    code: string,
+    name: string,
+    data?: {
+      imageUrl?: string;
+      themePrimary?: string;
+      themeAccent?: string;
+      locationLock?: boolean;
+      radiusMeters?: number;
+      anchorLat?: number;
+      anchorLng?: number;
+    },
+  ) {
+    if (
+      data?.locationLock === true &&
+      (data.anchorLat == null || data.anchorLng == null)
+    ) {
+      throw new BadRequestException('SPONSOR_LOCATION_REQUIRED');
+    }
+    const basePayload = {
+      name,
+      active: true,
+    };
+    const createPayload = {
+      ...basePayload,
+      imageUrl: data?.imageUrl?.trim() || null,
+      themePrimary: data?.themePrimary?.trim() || null,
+      themeAccent: data?.themeAccent?.trim() || null,
+      ...this.locationPayload(data),
+    };
+    const updatePayload: any = { ...basePayload };
+    if (data?.imageUrl !== undefined)
+      updatePayload.imageUrl = data.imageUrl.trim() || null;
+    if (data?.themePrimary !== undefined)
+      updatePayload.themePrimary = data.themePrimary.trim() || null;
+    if (data?.themeAccent !== undefined)
+      updatePayload.themeAccent = data.themeAccent.trim() || null;
+    Object.assign(updatePayload, this.locationPayload(data));
+
     return this.prisma.sponsor.upsert({
       where: { code },
-      update: { name, active: true },
-      create: { code, name, active: true },
+      update: updatePayload,
+      create: { code, ...createPayload },
     });
   }
 
@@ -40,15 +125,42 @@ export class SponsorsService {
       imageUrl?: string;
       themePrimary?: string;
       themeAccent?: string;
+      locationLock?: boolean;
+      radiusMeters?: number;
+      anchorLat?: number;
+      anchorLng?: number;
     },
   ) {
+    const payload: any = {};
+    if (data.name !== undefined) payload.name = data.name.trim();
+    if (data.imageUrl !== undefined)
+      payload.imageUrl = data.imageUrl.trim() || null;
+    if (data.themePrimary !== undefined)
+      payload.themePrimary = data.themePrimary.trim() || null;
+    if (data.themeAccent !== undefined)
+      payload.themeAccent = data.themeAccent.trim() || null;
+    Object.assign(payload, this.locationPayload(data));
+
+    if (data.locationLock === true) {
+      const current = await this.prisma.sponsor.findUnique({
+        where: { code },
+        select: { anchorLat: true, anchorLng: true },
+      });
+      const lat = data.anchorLat ?? current?.anchorLat;
+      const lng = data.anchorLng ?? current?.anchorLng;
+      if (lat == null || lng == null) {
+        throw new BadRequestException('SPONSOR_LOCATION_REQUIRED');
+      }
+    }
+
     return this.prisma.sponsor.update({
       where: { code },
-      data: data as any,
+      data: payload,
     });
   }
 
   async deleteSponsor(code: string) {
+    await this.snapshotSponsorMonthlyLeaders(code, 'sponsor_deleted');
     return this.prisma.sponsor.delete({ where: { code } });
   }
 
@@ -75,7 +187,18 @@ export class SponsorsService {
   async getSponsorWithGames(code: string) {
     const sponsor = await this.prisma.sponsor.findUnique({
       where: { code },
-      select: { code: true, name: true, active: true },
+      select: {
+        code: true,
+        name: true,
+        active: true,
+        imageUrl: true,
+        themePrimary: true,
+        themeAccent: true,
+        locationLock: true,
+        anchorLat: true,
+        anchorLng: true,
+        radiusMeters: true,
+      },
     });
     if (!sponsor) throw new NotFoundException('SPONSOR_NOT_FOUND');
 
@@ -218,6 +341,75 @@ export class SponsorsService {
     }));
   }
 
+  async currentMonthlyLeadersForSponsor(sponsorCode: string) {
+    const sponsor = await this.prisma.sponsor.findUnique({
+      where: { code: sponsorCode },
+      select: {
+        code: true,
+        name: true,
+        SponsorGame: {
+          select: { gameId: true, prizeAmount: true },
+          orderBy: { gameId: 'asc' },
+        },
+      },
+    });
+    if (!sponsor) throw new NotFoundException('SPONSOR_NOT_FOUND');
+
+    const ym = seasonYm();
+    const leaders = await Promise.all(
+      sponsor.SponsorGame.map(async (g) => {
+        const leaderboard = await this.sponsorGameLeaderboard({
+          sponsorCode,
+          gameId: g.gameId,
+          limit: 1,
+        });
+        const leader = leaderboard.rows.find((r) => r.rank === 1) ?? null;
+        return {
+          seasonYm: ym,
+          gameId: g.gameId,
+          prizeAmount: g.prizeAmount ?? 0,
+          leader,
+        };
+      }),
+    );
+
+    return leaders;
+  }
+
+  async snapshotSponsorMonthlyLeaders(sponsorCode: string, reason = 'manual') {
+    const sponsor = await this.prisma.sponsor.findUnique({
+      where: { code: sponsorCode },
+      select: { code: true, name: true },
+    });
+    if (!sponsor) throw new NotFoundException('SPONSOR_NOT_FOUND');
+
+    const ym = seasonYm();
+    const leaders = await this.currentMonthlyLeadersForSponsor(sponsorCode);
+    const rows = leaders
+      .filter((item) => item.leader)
+      .map((item) => ({
+        scope: $Enums.BadgeScope.SPONSOR,
+        seasonYm: ym,
+        sponsorCode: sponsor.code,
+        sponsorName: sponsor.name,
+        gameId: item.gameId,
+        leaderUserId: item.leader!.userId,
+        leaderName: item.leader!.displayName,
+        leaderEmail: item.leader!.email,
+        pearls: item.leader!.pearls ?? 0,
+        wins: item.leader!.wins ?? 0,
+        losses: item.leader!.losses ?? 0,
+        playedCount: item.leader!.playedCount ?? 0,
+        reason,
+      }));
+
+    if (rows.length > 0) {
+      await this.prisma.monthlyLeaderboardSnapshot.createMany({ data: rows });
+    }
+
+    return { seasonYm: ym, count: rows.length, leaders };
+  }
+
   // ✅ NEW: leaderboard per sponsor+game
   // - pearls: from SponsorGameWallet
   // - wins/losses: from MatchParticipant within sponsor scope and gameId
@@ -239,13 +431,14 @@ export class SponsorsService {
     if (!sponsor) throw new NotFoundException('SPONSOR_NOT_FOUND');
 
     // Base: wallets = who is active in this sponsor game
+    const walletTake = Math.max(limit, 500);
     const wallets = await this.prisma.sponsorGameWallet.findMany({
       where: { sponsorCode, gameId, user: { hideFromLeaderboard: false } },
       include: {
         user: { select: { id: true, displayName: true, email: true } },
       },
       orderBy: [{ pearls: 'desc' }, { updatedAt: 'desc' }],
-      take: limit,
+      take: walletTake,
     });
 
     const userIds = wallets.map((w) => w.userId);
@@ -369,7 +562,7 @@ export class SponsorsService {
     return {
       sponsor,
       gameId,
-      rows: rows.map((r) => {
+      rows: rows.slice(0, limit).map((r) => {
         const rank = r.played ? ++playedRank : null;
         return {
           rank,

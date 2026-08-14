@@ -14,7 +14,11 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../prisma.service';
 import { ok, err } from '../common/api';
-import { ensureAllGameWallets, getPearls } from '../common/pearls';
+import {
+  ensureAllGameBadgeScores,
+  ensureAllGameWallets,
+  getPearls,
+} from '../common/pearls';
 import { badgeSnapshot } from '../common/badges';
 import { Prisma } from '@prisma/client';
 
@@ -88,6 +92,10 @@ export class UsersController {
       if (!user) return err('USER_NOT_FOUND', 'USER_NOT_FOUND');
 
       const gamePearls = await ensureAllGameWallets(this.prisma, userId);
+      const gameBadgeProgress = await ensureAllGameBadgeScores(
+        this.prisma,
+        userId,
+      );
       const pearls = await getPearls(this.prisma, userId);
       const badges = await badgeSnapshot(this.prisma, userId);
 
@@ -95,6 +103,7 @@ export class UsersController {
         ...user,
         pearls,
         gamePearls,
+        gameBadgeProgress,
         creditPoints: pearls, // optional for old flutter UI
         ...badges,
       });
@@ -247,6 +256,7 @@ export class UsersController {
       if (!user) return err('USER_NOT_FOUND', 'USER_NOT_FOUND');
 
       const gamePearls = await ensureAllGameWallets(this.prisma, id);
+      const gameBadgeProgress = await ensureAllGameBadgeScores(this.prisma, id);
       const pearls = await getPearls(this.prisma, id);
       const badges = await badgeSnapshot(this.prisma, id);
 
@@ -263,6 +273,7 @@ export class UsersController {
         permanentScore: user.permanentScore ?? 0,
         pearls,
         gamePearls,
+        gameBadgeProgress,
         creditPoints: pearls,
         ...badges,
       });

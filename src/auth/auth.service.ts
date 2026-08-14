@@ -13,7 +13,10 @@ import { RequestRegisterOtpDto } from './dto/request-register-otp.dto';
 import { VerifyRegisterOtpDto } from './dto/verify-register-otp.dto';
 import { RequestPasswordResetOtpDto } from './dto/request-password-reset-otp.dto';
 import { ResetPasswordWithOtpDto } from './dto/reset-password-with-otp.dto';
-import { ensureAllGameWallets } from '../common/pearls';
+import {
+  ensureAllGameBadgeScores,
+  ensureAllGameWallets,
+} from '../common/pearls';
 import { badgeSnapshot } from '../common/badges';
 import { createHmac, randomInt } from 'crypto';
 
@@ -672,6 +675,7 @@ export class AuthService {
     extras?: {
       pearls?: number;
       gamePearls?: Record<string, number>;
+      gameBadgeProgress?: Record<string, number>;
       badges?: any[];
       badgeCounts?: Record<string, number>;
       bestBadge?: any;
@@ -698,6 +702,9 @@ export class AuthService {
       avatarBase64: user.avatarBase64 ?? null,
       avatarPath: user.avatarPath ?? null,
       ...(extras?.gamePearls ? { gamePearls: extras.gamePearls } : {}),
+      ...(extras?.gameBadgeProgress
+        ? { gameBadgeProgress: extras.gameBadgeProgress }
+        : {}),
       ...(extras?.badges ? { badges: extras.badges } : {}),
       ...(extras?.badgeCounts ? { badgeCounts: extras.badgeCounts } : {}),
       ...(extras?.bestBadge ? { bestBadge: extras.bestBadge } : {}),
@@ -706,10 +713,14 @@ export class AuthService {
 
   private async loadPearlsSnapshot(userId: string) {
     const gamePearls = await ensureAllGameWallets(this.prisma, userId);
+    const gameBadgeProgress = await ensureAllGameBadgeScores(
+      this.prisma,
+      userId,
+    );
     const values = Object.values(gamePearls ?? {});
     const pearls = values.length ? Math.max(...values) : 0;
     const badges = await badgeSnapshot(this.prisma, userId);
-    return { pearls, gamePearls, ...badges };
+    return { pearls, gamePearls, gameBadgeProgress, ...badges };
   }
 
   private async assertEmailPhoneAvailable(email: string, phone: string) {

@@ -8,61 +8,61 @@ datasource db {
 }
 
 model Game {
-  id                String              @id
-  name              String
-  category          String
-  DewanyahGame      DewanyahGame[]
-  matches           Match[]
-  rooms             Room[]
-  SponsorGame       SponsorGame[]
-  SponsorGameStat   SponsorGameStat[]
-  SponsorGameWallet SponsorGameWallet[]
+  id                 String               @id
+  name               String
+  category           String
+  DewanyahGame       DewanyahGame[]
+  matches            Match[]
+  rooms              Room[]
+  SponsorGame        SponsorGame[]
+  SponsorGameStat    SponsorGameStat[]
+  SponsorGameWallet  SponsorGameWallet[]
   DewanyahGameWallet DewanyahGameWallet[]
-  TimelineEvent     TimelineEvent[]
-  UserGameStat      UserGameStat[]
-  UserGameWallet    UserGameWallet[]
+  TimelineEvent      TimelineEvent[]
+  UserGameStat       UserGameStat[]
+  UserGameWallet     UserGameWallet[]
 }
 
 model User {
-  id                String              @id @default(uuid())
-  publicId          String              @unique @default(cuid())
-  email             String              @unique
-  phone             String?             @unique
-  phoneVerifiedAt   DateTime?
-  isTestAccount     Boolean             @default(false)
-  displayName       String
-  passwordHash      String?
-  createdAt         DateTime            @default(now())
-  creditPoints      Int                 @default(5)
-  creditBalance     Int                 @default(0)
-  vipUntil          DateTime?
-  permanentScore    Int                 @default(0)
-  pearls            Int                 @default(5)
-  hideFromLeaderboard Boolean           @default(false)
-  pearlsSeasonYm    Int?
-  themeId           String?
-  frameId           String?
-  cardId            String?
-  birthDate         DateTime?
-  avatarBase64      String?
-  avatarPath        String?
-  DewanyahMember    DewanyahMember[]
-  DewanyahRequest   DewanyahRequest[]
-  DewanyahGameWallet DewanyahGameWallet[]
-  badges            UserBadge[]
-  badgeAwards       UserBadgeAward[]
-  matchParts        MatchParticipant[]
-  roomsHosted       Room[]              @relation("RoomsHosted")
-  roomPlayers       RoomPlayer[]
-  roomResultVotes   RoomResultVote[]
-  RoomStake         RoomStake[]
-  SponsorGameStat   SponsorGameStat[]
-  SponsorGameWallet SponsorGameWallet[]
-  timeline          TimelineEvent[]
-  UserGameStat      UserGameStat[]
-  UserGameWallet    UserGameWallet[]
-  UserItem          UserItem[]
-  sponsors          UserSponsor[]
+  id                  String               @id @default(uuid())
+  publicId            String               @unique @default(cuid())
+  email               String               @unique
+  phone               String?              @unique
+  phoneVerifiedAt     DateTime?
+  isTestAccount       Boolean              @default(false)
+  displayName         String
+  passwordHash        String?
+  createdAt           DateTime             @default(now())
+  creditPoints        Int                  @default(5)
+  creditBalance       Int                  @default(0)
+  vipUntil            DateTime?
+  permanentScore      Int                  @default(0)
+  pearls              Int                  @default(5)
+  hideFromLeaderboard Boolean              @default(false)
+  pearlsSeasonYm      Int?
+  themeId             String?
+  frameId             String?
+  cardId              String?
+  birthDate           DateTime?
+  avatarBase64        String?
+  avatarPath          String?
+  DewanyahMember      DewanyahMember[]
+  DewanyahRequest     DewanyahRequest[]
+  DewanyahGameWallet  DewanyahGameWallet[]
+  badges              UserBadge[]
+  badgeAwards         UserBadgeAward[]
+  matchParts          MatchParticipant[]
+  roomsHosted         Room[]               @relation("RoomsHosted")
+  roomPlayers         RoomPlayer[]
+  roomResultVotes     RoomResultVote[]
+  RoomStake           RoomStake[]
+  SponsorGameStat     SponsorGameStat[]
+  SponsorGameWallet   SponsorGameWallet[]
+  timeline            TimelineEvent[]
+  UserGameStat        UserGameStat[]
+  UserGameWallet      UserGameWallet[]
+  UserItem            UserItem[]
+  sponsors            UserSponsor[]
 }
 
 model AuthOtpChallenge {
@@ -237,6 +237,10 @@ model Sponsor {
   imageUrl          String?
   themePrimary      String?
   themeAccent       String?
+  anchorLat         Float?
+  anchorLng         Float?
+  locationLock      Boolean             @default(false)
+  radiusMeters      Int?
   matches           Match[]             @relation("SponsorMatches")
   rooms             Room[]              @relation("SponsorRooms")
   SponsorGame       SponsorGame[]
@@ -301,15 +305,17 @@ model SponsorGame {
 }
 
 model SponsorGameWallet {
-  userId      String
-  sponsorCode String
-  gameId      String
-  pearls      Int      @default(5)
-  seasonYm    Int?
-  updatedAt   DateTime @updatedAt
-  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  sponsor     Sponsor  @relation(fields: [sponsorCode], references: [code], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  sponsorCode    String
+  gameId         String
+  pearls         Int      @default(5)
+  badgeScore     Int      @default(5)
+  badgeLossCount Int      @default(0)
+  seasonYm       Int?
+  updatedAt      DateTime @updatedAt
+  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  sponsor        Sponsor  @relation(fields: [sponsorCode], references: [code], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, sponsorCode, gameId])
   @@index([sponsorCode, gameId])
@@ -317,13 +323,15 @@ model SponsorGameWallet {
 }
 
 model UserGameWallet {
-  userId    String
-  gameId    String
-  pearls    Int      @default(5)
-  seasonYm  Int?
-  updatedAt DateTime @updatedAt
-  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  gameId         String
+  pearls         Int      @default(5)
+  badgeScore     Int      @default(5)
+  badgeLossCount Int      @default(0)
+  seasonYm       Int?
+  updatedAt      DateTime @updatedAt
+  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, gameId])
   @@index([gameId])
@@ -364,24 +372,24 @@ model SponsorGameStat {
 }
 
 model Dewanyah {
-  id              String           @id @default(uuid())
+  id              String               @id @default(uuid())
   name            String
   ownerUserId     String
   ownerEmail      String?
   ownerName       String?
-  prizeAmount     Int              @default(50)
+  prizeAmount     Int                  @default(50)
   anchorLat       Float?
   anchorLng       Float?
   imageUrl        String?
   themePrimary    String?
   themeAccent     String?
   note            String?
-  locationLock    Boolean          @default(false)
+  locationLock    Boolean              @default(false)
   radiusMeters    Int?
-  requireApproval Boolean          @default(true)
-  status          String           @default("active")
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  requireApproval Boolean              @default(true)
+  status          String               @default("active")
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
   games           DewanyahGame[]
   members         DewanyahMember[]
   rooms           Room[]
@@ -389,15 +397,17 @@ model Dewanyah {
 }
 
 model DewanyahGameWallet {
-  userId      String
-  dewanyahId  String
-  gameId      String
-  pearls      Int      @default(5)
-  seasonYm    Int?
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  dewanyah    Dewanyah @relation(fields: [dewanyahId], references: [id], onDelete: Cascade)
-  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId         String
+  dewanyahId     String
+  gameId         String
+  pearls         Int      @default(5)
+  badgeScore     Int      @default(5)
+  badgeLossCount Int      @default(0)
+  seasonYm       Int?
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dewanyah       Dewanyah @relation(fields: [dewanyahId], references: [id], onDelete: Cascade)
+  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
   @@id([userId, dewanyahId, gameId])
   @@index([dewanyahId, gameId])
@@ -450,6 +460,31 @@ model DewanyahRequest {
 
   @@index([status])
   @@index([userId])
+}
+
+model MonthlyLeaderboardSnapshot {
+  id           String     @id @default(cuid())
+  scope        BadgeScope
+  seasonYm     Int
+  sponsorCode  String?
+  sponsorName  String?
+  dewanyahId   String?
+  dewanyahName String?
+  gameId       String
+  leaderUserId String?
+  leaderName   String?
+  leaderEmail  String?
+  pearls       Int        @default(0)
+  wins         Int        @default(0)
+  losses       Int        @default(0)
+  playedCount  Int        @default(0)
+  reason       String     @default("manual")
+  createdAt    DateTime   @default(now())
+
+  @@index([seasonYm])
+  @@index([scope, sponsorCode])
+  @@index([scope, dewanyahId])
+  @@index([scope, gameId])
 }
 
 enum StoreKind {
