@@ -469,16 +469,17 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
           throw new BadRequestException('SPONSOR_LOCATION_NOT_SET');
         }
         const lockedRadius = this.normalizeRadius(sponsor.radiusMeters);
-        if (lat != null && lng != null) {
-          const dist = haversineMeters(
-            sponsor.anchorLat,
-            sponsor.anchorLng,
-            lat,
-            lng,
-          );
-          if (dist > lockedRadius) {
-            throw new BadRequestException('TOO_FAR');
-          }
+        if (lat == null || lng == null) {
+          throw new BadRequestException('NEED_LOCATION');
+        }
+        const dist = haversineMeters(
+          sponsor.anchorLat,
+          sponsor.anchorLng,
+          lat,
+          lng,
+        );
+        if (dist > lockedRadius) {
+          throw new BadRequestException('TOO_FAR');
         }
         roomLat = sponsor.anchorLat;
         roomLng = sponsor.anchorLng;
