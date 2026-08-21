@@ -53,6 +53,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
   private readonly lastReminderAt = new Map<string, number>();
   private static readonly REMINDER_SCAN_MS = 60 * 1000;
   private static readonly REMINDER_INTERVAL_MS = 10 * 60 * 1000;
+  private static readonly REMINDER_MAX_PER_ROOM = 2;
   private static readonly REMINDER_LINES = [
     'للحينكم تلعبون؟',
     'شلون اللعب؟',
@@ -192,6 +193,14 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
 
       const lastAt = this.lastReminderAt.get(room.code) ?? 0;
       if (now - lastAt < RoomsService.REMINDER_INTERVAL_MS) continue;
+
+      const reminderCount = await this.prisma.timelineEvent.count({
+        where: { roomCode: room.code, kind: 'ROOM_RESULT_REMINDER' },
+      });
+      if (reminderCount >= RoomsService.REMINDER_MAX_PER_ROOM) {
+        this.lastReminderAt.set(room.code, now);
+        continue;
+      }
 
       let recipients: string[] = [];
       let headingAr = 'تذكير بحسم النتيجة';
