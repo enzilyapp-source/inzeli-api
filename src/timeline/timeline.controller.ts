@@ -3,6 +3,7 @@ import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AuthGuard } from '@nestjs/passport';
 import { ok, err } from '../common/api';
+import { APP_NOTIFICATION_KIND } from '../common/app-notifications';
 
 function getReqUserId(req: any): string {
   return req?.user?.userId || req?.user?.id || req?.user?.sub || req?.user?.uid;
@@ -26,6 +27,8 @@ export class TimelineController {
       const n = Math.min(Math.max(Number(limit ?? 200), 1), 300);
       const scopeAll = (scope ?? '').toLowerCase() == 'all';
       const whereClause = {
+        // Filter before pagination so inbox traffic never crowds out match history.
+        kind: { notIn: scopeAll ? [APP_NOTIFICATION_KIND, 'SEASON_WALLET_ARCHIVE', 'ROOM_RESULT_REMINDER', 'MATCH_WIN', 'MATCH_LOSS'] : [APP_NOTIFICATION_KIND, 'SEASON_WALLET_ARCHIVE'] },
         ...(scopeAll ? {} : { userId }),
         ...(gameId ? { gameId } : {}),
       };
@@ -44,6 +47,8 @@ export class TimelineController {
             if (k === 'MATCH_WIN' || k === 'MATCH_LOSS') return false;
             // تذكيرات الحسم لا نعرضها في شسالفه العام.
             if (k === 'ROOM_RESULT_REMINDER') return false;
+            // إشعارات الجرس الداخلية لها صفحة خاصة ولا تظهر في الفيد العام.
+            if (k === APP_NOTIFICATION_KIND) return false;
             return true;
           })
         : events;

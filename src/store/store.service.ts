@@ -78,9 +78,11 @@ export class StoreService {
       const days = this.vipMonthlyDays();
       const price = this.vipMonthlyPrice();
       return this.prisma.$transaction(async (tx) => {
+        // Serialize purchases for one account: prevent double-spending and lost renewal time.
+        await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
         const user = await tx.user.findUnique({
           where: { id: userId },
-          select: { creditBalance: true, vipUntil: true },
+          select: { creditBalance: true, vipUntil: true, isTestAccount: true },
         });
         if (!user) throw new NotFoundException('USER_NOT_FOUND');
         if ((user.creditBalance ?? 0) < price) {
@@ -101,6 +103,10 @@ export class StoreService {
           },
           select: { creditBalance: true, vipUntil: true },
         });
+
+        await tx.vipPurchase.create({ data: {
+          userId, isTestAccount: user.isTestAccount, creditsCharged: price, startsAt: base, endsAt: nextVipUntil,
+        } });
 
         return {
           itemId,

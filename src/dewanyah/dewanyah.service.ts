@@ -1,3 +1,6 @@
+import { validateLocationConfig } from '../common/location-config';
+import { normalizeBoardColor } from '../common/board-color';
+import { APP_NOTIFICATION_KIND } from '../common/app-notifications';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { $Enums } from '@prisma/client';
 import { getDewanyahPearls } from '../common/pearls';
@@ -50,6 +53,7 @@ export class DewanyahService {
   }) {
     const payload: any = {};
     if (!data) return payload;
+    validateLocationConfig(data);
     if (data.locationLock !== undefined) {
       payload.locationLock = data.locationLock === true;
     }
@@ -77,11 +81,15 @@ export class DewanyahService {
   }) {
     const appId = this.oneSignalAppId;
     const apiKey = this.oneSignalApiKey;
+    const { ownerUserId, dewanyahId, dewanyahName, requesterName } = params;
+    const inbox = await this.prisma.timelineEvent.create({ data: {
+      userId: ownerUserId, kind: APP_NOTIFICATION_KIND,
+      meta: { notificationType: 'dewanyah_join_request', titleAr: 'طلب انضمام جديد للديوانية', messageAr: `${requesterName} طلب الانضمام إلى ${dewanyahName}`, data: { type: 'dewanyah_join_request', dewanyahId, recipientUserId: ownerUserId } },
+    }, select: { id: true } });
     if (!appId || !apiKey) return;
 
-    const { ownerUserId, dewanyahId, dewanyahName, requesterName } = params;
-
     const payload = {
+      ttl: 86400,
       app_id: appId,
       include_external_user_ids: [ownerUserId],
       channel_for_external_user_ids: 'push',
@@ -94,6 +102,8 @@ export class DewanyahService {
         ar: `${requesterName} طلب الانضمام إلى ${dewanyahName}`,
       },
       data: {
+        inAppNotificationId: inbox.id,
+        recipientUserId: ownerUserId,
         type: 'dewanyah_join_request',
         dewanyahId,
       },
@@ -149,6 +159,7 @@ export class DewanyahService {
       radiusMeters,
     } = params;
     const normalizedPrizeAmount = this.normalizePrizeAmount(prizeAmount);
+    validateLocationConfig({ anchorLat, anchorLng, radiusMeters });
     if (locationLock === true && (anchorLat == null || anchorLng == null)) {
       throw new BadRequestException('DEWANYAH_LOCATION_REQUIRED');
     }
@@ -298,6 +309,8 @@ export class DewanyahService {
     },
   ) {
     const updates: any = { ...data };
+    if (data.themePrimary !== undefined) updates.themePrimary = normalizeBoardColor(data.themePrimary);
+    if (data.themeAccent !== undefined) updates.themeAccent = normalizeBoardColor(data.themeAccent);
     if (data.prizeAmount !== undefined) {
       updates.prizeAmount = this.normalizePrizeAmount(data.prizeAmount) ?? 0;
     }
@@ -795,6 +808,7 @@ export class DewanyahService {
       themePrimary,
       themeAccent,
     } = data;
+    validateLocationConfig({ anchorLat, anchorLng, radiusMeters });
     if (locationLock === true && (anchorLat == null || anchorLng == null)) {
       throw new BadRequestException('DEWANYAH_LOCATION_REQUIRED');
     }
@@ -833,8 +847,8 @@ export class DewanyahService {
           : undefined,
     };
     if (imageUrl != null) payload.imageUrl = imageUrl;
-    if (themePrimary != null) payload.themePrimary = themePrimary;
-    if (themeAccent != null) payload.themeAccent = themeAccent;
+    if (themePrimary != null) payload.themePrimary = normalizeBoardColor(themePrimary);
+    if (themeAccent != null) payload.themeAccent = normalizeBoardColor(themeAccent);
 
     const dew = await this.prisma.dewanyah.create({ data: payload });
     if (ownerUserId) {

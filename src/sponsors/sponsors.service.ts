@@ -1,3 +1,5 @@
+import { validateLocationConfig } from '../common/location-config';
+import { normalizeBoardColor } from '../common/board-color';
 import {
   BadRequestException,
   Injectable,
@@ -24,6 +26,7 @@ export class SponsorsService {
   }) {
     const payload: any = {};
     if (!data) return payload;
+    validateLocationConfig(data);
     if (data.locationLock !== undefined) {
       payload.locationLock = data.locationLock === true;
     }
@@ -98,17 +101,17 @@ export class SponsorsService {
     const createPayload = {
       ...basePayload,
       imageUrl: data?.imageUrl?.trim() || null,
-      themePrimary: data?.themePrimary?.trim() || null,
-      themeAccent: data?.themeAccent?.trim() || null,
+      themePrimary: normalizeBoardColor(data?.themePrimary) ?? null,
+      themeAccent: normalizeBoardColor(data?.themeAccent) ?? null,
       ...this.locationPayload(data),
     };
     const updatePayload: any = { ...basePayload };
     if (data?.imageUrl !== undefined)
       updatePayload.imageUrl = data.imageUrl.trim() || null;
     if (data?.themePrimary !== undefined)
-      updatePayload.themePrimary = data.themePrimary.trim() || null;
+      updatePayload.themePrimary = normalizeBoardColor(data.themePrimary);
     if (data?.themeAccent !== undefined)
-      updatePayload.themeAccent = data.themeAccent.trim() || null;
+      updatePayload.themeAccent = normalizeBoardColor(data.themeAccent);
     Object.assign(updatePayload, this.locationPayload(data));
 
     return this.prisma.sponsor.upsert({
@@ -136,9 +139,9 @@ export class SponsorsService {
     if (data.imageUrl !== undefined)
       payload.imageUrl = data.imageUrl.trim() || null;
     if (data.themePrimary !== undefined)
-      payload.themePrimary = data.themePrimary.trim() || null;
+      payload.themePrimary = normalizeBoardColor(data.themePrimary);
     if (data.themeAccent !== undefined)
-      payload.themeAccent = data.themeAccent.trim() || null;
+      payload.themeAccent = normalizeBoardColor(data.themeAccent);
     Object.assign(payload, this.locationPayload(data));
 
     if (data.locationLock === true) {

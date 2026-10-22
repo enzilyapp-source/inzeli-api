@@ -19,6 +19,7 @@ export class AdminUsersController {
   private readonly listSelect = {
     id: true,
     publicId: true,
+    username: true,
     email: true,
     phone: true,
     displayName: true,
@@ -58,6 +59,7 @@ export class AdminUsersController {
               { displayName: { contains: query } },
               { id: { contains: query } },
               { publicId: { contains: query } },
+              { username: { contains: query.replace(/^@/, '').toLowerCase() } },
             ],
           }
         : {};

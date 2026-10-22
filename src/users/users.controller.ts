@@ -1,3 +1,4 @@
+import { normalizeUsername, usernameWriteError } from '../common/username';
 // src/users/users.controller.ts
 import {
   Controller,
@@ -29,6 +30,7 @@ export class UsersController {
   private readonly _publicUserSelect = {
     id: true,
     publicId: true,
+    username: true,
     email: true,
     displayName: true,
     vipUntil: true,
@@ -109,6 +111,20 @@ export class UsersController {
       });
     } catch (e: any) {
       return err(e?.message || 'Failed', e?.message);
+    }
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Patch('me/username')
+  async claimUsername(@Req() req: any, @Body() body: { username?: unknown }) {
+    try {
+      const username = normalizeUsername(body?.username);
+      const updated = await this.prisma.user.update({ where: { id: req.user.userId }, data: { username }, select: this._publicUserSelect });
+      return ok('Username saved', updated);
+    } catch (error: any) {
+      const mapped = usernameWriteError(error);
+      const code = mapped?.response?.message || 'USERNAME_SAVE_FAILED';
+      return err(code, code);
     }
   }
 
@@ -207,6 +223,7 @@ export class UsersController {
         { displayName: { contains: query } },
         { id: { contains: query } },
         { publicId: { contains: query } },
+        { username: { contains: query.replace(/^@/, '').toLowerCase() } },
       ],
     };
     const users = await this.prisma.user.findMany({
@@ -244,6 +261,7 @@ export class UsersController {
         select: {
           id: true,
           publicId: true,
+          username: true,
           displayName: true,
           permanentScore: true,
           avatarBase64: true,
@@ -263,6 +281,7 @@ export class UsersController {
       return ok('Stats', {
         userId: id,
         publicId: user.publicId ?? null,
+        username: user.username ?? null,
         displayName: user.displayName ?? null,
         avatarBase64: user.avatarBase64 ?? null,
         avatarPath: user.avatarPath ?? null,

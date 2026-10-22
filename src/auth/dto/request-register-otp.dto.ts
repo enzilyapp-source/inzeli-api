@@ -1,5 +1,6 @@
 import {
   IsEmail,
+  IsString,
   IsIn,
   IsISO8601,
   IsNotEmpty,
@@ -10,6 +11,12 @@ import {
 } from 'class-validator';
 
 export class RequestRegisterOtpDto {
+  // Optional only for backward compatibility. The v2 route requires it explicitly.
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  username?: string;
+
   @IsEmail()
   email!: string;
 

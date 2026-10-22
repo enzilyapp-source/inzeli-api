@@ -1,3 +1,4 @@
+import { normalizeUsername, legacyUsername, usernameWriteError } from '../common/username';
 // src/auth/auth.service.ts
 import {
   Injectable,
@@ -24,6 +25,7 @@ const REGISTER_OTP_PURPOSE = 'register';
 const PASSWORD_RESET_OTP_PURPOSE = 'password_reset';
 
 type RegisterOtpPayload = {
+  username?: string;
   email: string;
   displayName: string;
   phone: string;
@@ -685,6 +687,7 @@ export class AuthService {
     return {
       id: user.id,
       publicId: user.publicId ?? null,
+      username: user.username ?? null,
       email: user.email,
       phone: user.phone ?? null,
       phoneVerifiedAt: user.phoneVerifiedAt ?? null,
@@ -743,6 +746,7 @@ export class AuthService {
   ) {
     const user = await this.prisma.user.create({
       data: {
+        username: payload.username ?? legacyUsername(),
         email: payload.email,
         phone: payload.phone,
         phoneVerifiedAt: new Date(),
@@ -753,7 +757,7 @@ export class AuthService {
           ? { birthDate: new Date(payload.birthDate) }
           : {}),
       },
-    });
+    }).catch(error => { throw usernameWriteError(error); });
 
     const pearlsSnapshot = await this.loadPearlsSnapshot(user.id);
     const token = await this.jwt.signAsync({ sub: user.id, email: user.email });
@@ -780,7 +784,15 @@ export class AuthService {
     };
   }
 
-  async requestRegisterOtp(dto: RequestRegisterOtpDto) {
+  async usernameAvailability(value: string) {
+    const username = normalizeUsername(value);
+    const exists = await this.prisma.user.findUnique({ where: { username }, select: { id: true } });
+    return { username, available: !exists };
+  }
+
+  async requestRegisterOtp(dto: RequestRegisterOtpDto, requireUsername = false) {
+    const username = dto.username != null || requireUsername ? normalizeUsername(dto.username) : undefined;
+    if (username && !(await this.usernameAvailability(username)).available) throw new BadRequestException('USERNAME_TAKEN');
     const email = this.normalizeEmail(dto.email);
     const phone = this.normalizePhone(dto.phone);
     const displayName = this.normalizeDisplayName(dto.displayName);
@@ -796,6 +808,7 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const payload: RegisterOtpPayload = {
+      ...(username ? { username } : {}),
       email,
       phone,
       displayName,
@@ -965,6 +978,7 @@ export class AuthService {
 
       const created = await tx.user.create({
         data: {
+          username: typeof raw?.username === 'string' ? normalizeUsername(raw.username) : legacyUsername(),
           email,
           phone,
           phoneVerifiedAt: new Date(),
@@ -981,7 +995,7 @@ export class AuthService {
       });
 
       return created;
-    });
+    }).catch(error => { throw usernameWriteError(error); });
 
     const pearlsSnapshot = await this.loadPearlsSnapshot(user.id);
     const token = await this.jwt.signAsync({ sub: user.id, email: user.email });

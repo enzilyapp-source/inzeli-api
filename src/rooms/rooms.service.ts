@@ -7,6 +7,9 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { APP_NOTIFICATION_KIND } from '../common/app-notifications';
+import { OperationsService } from '../operations/operations.service';
 import { PrismaService } from '../prisma.service';
 import { Prisma, $Enums } from '@prisma/client';
 import {
@@ -65,6 +68,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private matches: MatchesService,
+    private operations: OperationsService,
   ) {}
 
   onModuleInit() {
@@ -108,14 +112,19 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
   }) {
     const appId = this.oneSignalAppId;
     const apiKey = this.oneSignalApiKey;
-    if (!appId || !apiKey) return false;
-
     const recipients = params.recipients
       .map((x) => (x ?? '').trim())
       .filter((x) => x.length > 0);
     if (!recipients.length) return false;
 
+    const notificationKey = randomUUID();
+    await this.prisma.timelineEvent.createMany({ data: recipients.map(userId => ({
+      userId, kind: APP_NOTIFICATION_KIND,
+      meta: { notificationType: 'match_reminder', titleAr: params.headingAr, messageAr: params.contentAr, data: { ...params.data, notificationKey, recipientUserId: userId } },
+    })) });
+    if (!appId || !apiKey) return false;
     const payload = {
+      ttl: 86400,
       app_id: appId,
       include_external_user_ids: recipients,
       channel_for_external_user_ids: 'push',
@@ -124,7 +133,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
         ar: params.contentAr,
         en: 'Please complete the match result.',
       },
-      data: params.data,
+      data: { ...params.data, notificationKey, recipientUserIds: recipients },
       ios_badgeType: 'Increase',
       ios_badgeCount: 1,
     };
@@ -435,6 +444,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     lng?: number,
     radiusMeters?: number,
   ) {
+    await this.operations.assertCanPlay(gameId, Boolean(sponsorCode || dewanyahId));
     if (sponsorCode && dewanyahId) {
       throw new BadRequestException('SPONSOR_AND_DEWANYAH_CONFLICT');
     }
@@ -567,6 +577,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
           throw new BadRequestException('DEWANYAH_LOCATION_NOT_SET');
         }
         const lockedRadius = this.normalizeRadius(dew.radiusMeters);
+        if (lat == null || lng == null) throw new BadRequestException('NEED_LOCATION');
         if (lat != null && lng != null) {
           const dist = haversineMeters(dew.anchorLat, dew.anchorLng, lat, lng);
           if (dist > lockedRadius) {
@@ -685,6 +696,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     })) as any;
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
 
+    await this.operations.assertCanPlay(room.gameId, Boolean(room.sponsorCode || room.dewanyahId));
     await this.assertUserHasNoActiveRoom(userId, code);
 
     // لا يسمح بالانضمام بعد بدء العداد/الروم
@@ -693,6 +705,16 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     }
     if (this.isLocked(room)) {
       throw new BadRequestException('ROOM_LOCKED');
+    }
+
+    if (room.sponsorCode) {
+      const sponsor = await this.prisma.sponsor.findUnique({ where: { code: room.sponsorCode } });
+      if (!sponsor?.active) throw new NotFoundException('SPONSOR_NOT_FOUND');
+      if (sponsor.locationLock) {
+        if (sponsor.anchorLat == null || sponsor.anchorLng == null) throw new BadRequestException('SPONSOR_LOCATION_NOT_SET');
+        if (lat == null || lng == null) throw new BadRequestException('NEED_LOCATION');
+        if (haversineMeters(sponsor.anchorLat, sponsor.anchorLng, lat, lng) > this.normalizeRadius(sponsor.radiusMeters)) throw new BadRequestException('TOO_FAR');
+      }
     }
 
     let lockedDewanyahLocation = false;
@@ -810,6 +832,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
+    await this.operations.assertCanPlay();
     if (room.hostUserId !== hostId)
       throw new ForbiddenException('ONLY_HOST_CAN_START');
     if (room.status !== 'waiting')
@@ -1143,6 +1166,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     payload: { winners: string[]; losers: string[] },
   ) {
     const room = await this.getRoomWithPlayers(code);
+    await this.operations.assertCanPlay();
     if (room.hostUserId !== hostId)
       throw new ForbiddenException('ONLY_HOST_CAN_SUBMIT');
     const winners = (payload.winners ?? []).filter(Boolean);
@@ -1175,6 +1199,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       include: { players: true, resultVotes: true },
     });
     if (!room) throw new NotFoundException('ROOM_NOT_FOUND');
+    await this.operations.assertCanPlay();
     const inRoom = room.players.some((p) => p.userId === userId);
     if (!inRoom) throw new ForbiddenException('NOT_IN_ROOM');
     if (room.resultStatus !== $Enums.RoomResultStatus.pending) {

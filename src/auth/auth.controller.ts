@@ -6,6 +6,7 @@ import {
   UseGuards,
   Req,
   Query,
+  Param,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -20,6 +21,30 @@ import { ok, err } from '../common/api';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
+
+  @Get('usernames/:username')
+  async usernameAvailability(@Param('username') username: string) {
+    try {
+      return ok(
+        'Username availability',
+        await this.auth.usernameAvailability(username),
+      );
+    } catch (e: any) {
+      const code = e?.response?.message || 'USERNAME_CHECK_FAILED';
+      return err(code, code);
+    }
+  }
+
+  // New clients must choose a handle; legacy routes remain compatible.
+  @Post('register/v2/request-otp')
+  async requestRegisterOtpV2(@Body() dto: RequestRegisterOtpDto) {
+    try {
+      return ok('OTP sent', await this.auth.requestRegisterOtp(dto, true));
+    } catch (e: any) {
+      const code = e?.response?.message || 'OTP_REQUEST_FAILED';
+      return err(code, code);
+    }
+  }
 
   // New flow: request OTP with registration payload
   @Post('register/request-otp')

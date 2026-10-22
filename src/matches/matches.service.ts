@@ -4,6 +4,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { OperationsService } from '../operations/operations.service';
 import { PrismaService } from '../prisma.service';
 import { Prisma, Outcome } from '@prisma/client';
 import {
@@ -34,7 +35,7 @@ import {
 
 @Injectable()
 export class MatchesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private operations: OperationsService) {}
 
   async createMatch(input: {
     roomCode?: string;
@@ -71,6 +72,8 @@ export class MatchesService {
       // const endAt = room.timerSec ? room.startedAt.getTime() + room.timerSec * 1000 : null;
       // if (endAt && now < endAt) throw new BadRequestException('TIMER_NOT_FINISHED');
     }
+
+    await this.operations.assertCanPlay(room ? undefined : gameId);
 
     // ✅ sponsorCode لو موجود في الروم
     const sponsorCode: string | null = (room as any)?.sponsorCode ?? null;

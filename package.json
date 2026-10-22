@@ -26,7 +26,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:operations": "node test/operations.integration.cjs",
+    "db:operations:check": "node scripts/check-operations-db.cjs",
+    "test:usernames": "node test/usernames.integration.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

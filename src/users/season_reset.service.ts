@@ -1,5 +1,7 @@
+import { APP_NOTIFICATION_KIND } from '../common/app-notifications';
+import { MonthlyAwardsService, previousSeason } from './monthly_awards.service';
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { $Enums, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import {
   awardBadgesForBalance,
   badgeContext,
@@ -32,7 +34,10 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
   private readonly oneSignalRestApiKey =
     process.env.ONESIGNAL_REST_API_KEY || '';
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly monthlyAwards: MonthlyAwardsService,
+  ) {}
 
   onModuleInit() {
     if (process.env.AUTO_MONTHLY_SEASON_RESET === 'false') return;
@@ -80,6 +85,7 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
         en: params.messageEn || params.messageAr,
       },
       data: params.data ?? {},
+      ttl: 86400,
       ios_badgeType: 'Increase',
       ios_badgeCount: 1,
     };
@@ -94,14 +100,32 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
 
   async sendSeasonEndedNotice() {
     const ym = seasonYm();
+    const inbox = await this.prisma.timelineEvent.create({
+      data: {
+        kind: APP_NOTIFICATION_KIND,
+        meta: {
+          notificationType: 'season_reset',
+          titleAr: 'انتهى السيزن الشهري',
+          messageAr:
+            'انتهى السيزن ورجعت اللآلئ إلى ٥. الليدربورد بدأ من جديد، والمستويات محفوظة.',
+          data: {
+            type: 'season_reset',
+            seasonYm: ym,
+            resetPearls: RESET_PEARLS,
+          },
+        },
+      },
+      select: { id: true },
+    });
     return this.sendBroadcast({
       titleAr: 'انتهى السيزن الشهري',
       messageAr:
-        'انتهى السيزن ورجعت اللآلئ إلى ٥. الليدربورد بدأ من جديد، والانواط محفوظة.',
+        'انتهى السيزن ورجعت اللآلئ إلى ٥. الليدربورد بدأ من جديد، والتصنيفات محفوظة.',
       titleEn: 'Monthly season ended',
       messageEn:
         'The season ended and pearls are back to 5. Leaderboards restarted, and badges are saved.',
       data: {
+        inAppNotificationId: inbox.id,
         type: SEASON_RESET_KIND,
         seasonYm: ym,
         resetPearls: RESET_PEARLS,
@@ -137,7 +161,15 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
         select: { id: true, createdAt: true, meta: true },
       });
       if (existing && !force) {
+        // A previous push failure must remain retryable after a successful reset.
+        const monthlyAwards =
+          !dryRun && sendPush
+            ? await this.monthlyAwards.dispatch({
+                seasonYm: previousSeason(ym),
+              })
+            : undefined;
         return {
+          monthlyAwards,
           skipped: true,
           reason: 'SEASON_ALREADY_RESET',
           seasonYm: ym,
@@ -233,10 +265,10 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
             });
           }
 
-          const leaderSnapshots = await this.snapshotScopedMonthlyLeaders(
+          // Finalize the completed month before resetting wallets for the new one.
+          const leaderSnapshots = await this.monthlyAwards.capture(
             tx,
-            ym,
-            source === 'auto' ? 'season_reset_auto' : 'season_reset_admin',
+            previousSeason(ym),
           );
 
           const [
@@ -246,6 +278,15 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
             dewanyahGameWallets,
           ] = await Promise.all([
             tx.user.updateMany({
+              // Preserve points already earned after a lazy new-month reset.
+              where: force
+                ? {}
+                : {
+                    OR: [
+                      { pearlsSeasonYm: null },
+                      { pearlsSeasonYm: { not: ym } },
+                    ],
+                  },
               data: {
                 pearls: RESET_PEARLS,
                 creditPoints: RESET_PEARLS,
@@ -253,6 +294,10 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
               },
             }),
             tx.userGameWallet.updateMany({
+              // Preserve points already earned after a lazy new-month reset.
+              where: force
+                ? {}
+                : { OR: [{ seasonYm: null }, { seasonYm: { not: ym } }] },
               data: {
                 pearls: RESET_PEARLS,
                 badgeScore: RESET_PEARLS,
@@ -261,6 +306,10 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
               },
             }),
             tx.sponsorGameWallet.updateMany({
+              // Preserve points already earned after a lazy new-month reset.
+              where: force
+                ? {}
+                : { OR: [{ seasonYm: null }, { seasonYm: { not: ym } }] },
               data: {
                 pearls: RESET_PEARLS,
                 badgeScore: RESET_PEARLS,
@@ -269,6 +318,10 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
               },
             }),
             tx.dewanyahGameWallet.updateMany({
+              // Preserve points already earned after a lazy new-month reset.
+              where: force
+                ? {}
+                : { OR: [{ seasonYm: null }, { seasonYm: { not: ym } }] },
               data: {
                 pearls: RESET_PEARLS,
                 badgeScore: RESET_PEARLS,
@@ -307,11 +360,17 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
             leaderSnapshots,
           };
         },
-        { timeout: 60_000 },
+        {
+          timeout: 60_000,
+          isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        },
       );
 
+      const monthlyAwards = sendPush
+        ? await this.monthlyAwards.dispatch({ seasonYm: previousSeason(ym) })
+        : undefined;
       const push = sendPush ? await this.sendSeasonEndedNotice() : undefined;
-      return { skipped: false, ...result, push };
+      return { skipped: false, ...result, push, monthlyAwards };
     } finally {
       this.running = false;
     }
@@ -403,246 +462,6 @@ export class SeasonResetService implements OnModuleInit, OnModuleDestroy {
       dewanyahGameWalletsNeedingReset,
       badgeEligibleWallets,
     };
-  }
-
-  private async snapshotScopedMonthlyLeaders(
-    tx: Prisma.TransactionClient,
-    ym: number,
-    reason: string,
-  ) {
-    const range = seasonRange(ym);
-    const snapshots: Array<{
-      scope: $Enums.BadgeScope;
-      seasonYm: number;
-      sponsorCode?: string;
-      sponsorName?: string;
-      dewanyahId?: string;
-      dewanyahName?: string;
-      gameId: string;
-      leaderUserId: string;
-      leaderName: string;
-      leaderEmail?: string | null;
-      pearls: number;
-      wins: number;
-      losses: number;
-      playedCount: number;
-      reason: string;
-    }> = [];
-
-    const sponsorGames = await tx.sponsorGame.findMany({
-      include: {
-        sponsor: { select: { code: true, name: true } },
-      },
-      orderBy: [{ sponsorCode: 'asc' }, { gameId: 'asc' }],
-    });
-    for (const sg of sponsorGames) {
-      const wallets = await tx.sponsorGameWallet.findMany({
-        where: {
-          sponsorCode: sg.sponsorCode,
-          gameId: sg.gameId,
-          user: { hideFromLeaderboard: false },
-        },
-        include: {
-          user: { select: { id: true, displayName: true, email: true } },
-        },
-        orderBy: [{ pearls: 'desc' }, { updatedAt: 'desc' }],
-        take: 100,
-      });
-      const userIds = wallets.map((w) => w.userId);
-      if (!userIds.length) continue;
-      const stats = await this.matchStatsForUsers(tx, {
-        userIds,
-        gameId: sg.gameId,
-        sponsorCode: sg.sponsorCode,
-        range,
-      });
-      const leader = wallets
-        .map((w) => {
-          const stat = stats.get(w.userId) ?? this.emptyMatchStats();
-          return {
-            userId: w.userId,
-            displayName:
-              w.user?.displayName?.trim() || w.user?.email?.trim() || 'لاعب',
-            email: w.user?.email ?? null,
-            pearls: w.seasonYm === ym ? w.pearls : RESET_PEARLS,
-            ...stat,
-          };
-        })
-        .filter((row) => row.playedCount > 0)
-        .sort((a, b) => {
-          const pearls = b.pearls - a.pearls;
-          if (pearls !== 0) return pearls;
-          return (
-            (b.lastPlayedAt?.getTime() ?? 0) - (a.lastPlayedAt?.getTime() ?? 0)
-          );
-        })[0];
-      if (!leader) continue;
-      snapshots.push({
-        scope: $Enums.BadgeScope.SPONSOR,
-        seasonYm: ym,
-        sponsorCode: sg.sponsorCode,
-        sponsorName: sg.sponsor?.name ?? sg.sponsorCode,
-        gameId: sg.gameId,
-        leaderUserId: leader.userId,
-        leaderName: leader.displayName,
-        leaderEmail: leader.email,
-        pearls: leader.pearls,
-        wins: leader.wins,
-        losses: leader.losses,
-        playedCount: leader.playedCount,
-        reason,
-      });
-    }
-
-    const dewanyahGames = await tx.dewanyahGame.findMany({
-      include: {
-        dewanyah: { select: { id: true, name: true } },
-      },
-      orderBy: [{ dewanyahId: 'asc' }, { gameId: 'asc' }],
-    });
-    for (const dg of dewanyahGames) {
-      const members = await tx.dewanyahMember.findMany({
-        where: {
-          dewanyahId: dg.dewanyahId,
-          status: 'approved',
-          user: { hideFromLeaderboard: false },
-        },
-        include: {
-          user: { select: { id: true, displayName: true, email: true } },
-        },
-      });
-      const userIds = members.map((m) => m.userId);
-      if (!userIds.length) continue;
-      const wallets = await tx.dewanyahGameWallet.findMany({
-        where: {
-          dewanyahId: dg.dewanyahId,
-          gameId: dg.gameId,
-          userId: { in: userIds },
-        },
-        select: { userId: true, pearls: true, seasonYm: true, updatedAt: true },
-      });
-      const walletMap = new Map(wallets.map((w) => [w.userId, w]));
-      const stats = await this.matchStatsForUsers(tx, {
-        userIds,
-        gameId: dg.gameId,
-        dewanyahId: dg.dewanyahId,
-        range,
-      });
-      const leader = members
-        .map((m) => {
-          const wallet = walletMap.get(m.userId);
-          const stat = stats.get(m.userId) ?? this.emptyMatchStats();
-          return {
-            userId: m.userId,
-            displayName:
-              m.user?.displayName?.trim() || m.user?.email?.trim() || 'لاعب',
-            email: m.user?.email ?? null,
-            pearls: wallet?.seasonYm === ym ? wallet.pearls : RESET_PEARLS,
-            joinedAt: m.createdAt,
-            ...stat,
-          };
-        })
-        .filter((row) => row.playedCount > 0)
-        .sort((a, b) => {
-          const pearls = b.pearls - a.pearls;
-          if (pearls !== 0) return pearls;
-          return (
-            (b.lastPlayedAt?.getTime() ?? 0) - (a.lastPlayedAt?.getTime() ?? 0)
-          );
-        })[0];
-      if (!leader) continue;
-      snapshots.push({
-        scope: $Enums.BadgeScope.DEWANYAH,
-        seasonYm: ym,
-        dewanyahId: dg.dewanyahId,
-        dewanyahName: dg.dewanyah?.name ?? 'ديوانية',
-        gameId: dg.gameId,
-        leaderUserId: leader.userId,
-        leaderName: leader.displayName,
-        leaderEmail: leader.email,
-        pearls: leader.pearls,
-        wins: leader.wins,
-        losses: leader.losses,
-        playedCount: leader.playedCount,
-        reason,
-      });
-    }
-
-    if (snapshots.length > 0) {
-      await tx.monthlyLeaderboardSnapshot.createMany({ data: snapshots });
-    }
-
-    return snapshots.length;
-  }
-
-  private emptyMatchStats() {
-    return {
-      wins: 0,
-      losses: 0,
-      playedCount: 0,
-      lastPlayedAt: null as Date | null,
-    };
-  }
-
-  private async matchStatsForUsers(
-    tx: Prisma.TransactionClient,
-    params: {
-      userIds: string[];
-      gameId: string;
-      sponsorCode?: string;
-      dewanyahId?: string;
-      range: { gte: Date; lt: Date };
-    },
-  ) {
-    const stats = new Map<
-      string,
-      {
-        wins: number;
-        losses: number;
-        playedCount: number;
-        lastPlayedAt: Date | null;
-      }
-    >();
-    for (const userId of params.userIds)
-      stats.set(userId, this.emptyMatchStats());
-
-    const parts = await tx.matchParticipant.findMany({
-      where: {
-        userId: { in: params.userIds },
-        match: {
-          gameId: params.gameId,
-          createdAt: params.range,
-          ...(params.sponsorCode ? { sponsorCode: params.sponsorCode } : {}),
-          ...(params.dewanyahId
-            ? { room: { is: { dewanyahId: params.dewanyahId } } }
-            : {}),
-        },
-      },
-      select: {
-        userId: true,
-        outcome: true,
-        match: { select: { createdAt: true } },
-      },
-      orderBy: { match: { createdAt: 'desc' } },
-      take: 5000,
-    });
-
-    for (const part of parts) {
-      const row = stats.get(part.userId) ?? this.emptyMatchStats();
-      row.playedCount += 1;
-      if (part.outcome === 'WIN') row.wins += 1;
-      if (part.outcome === 'LOSS') row.losses += 1;
-      const playedAt = part.match.createdAt;
-      if (
-        !row.lastPlayedAt ||
-        playedAt.getTime() > row.lastPlayedAt.getTime()
-      ) {
-        row.lastPlayedAt = playedAt;
-      }
-      stats.set(part.userId, row);
-    }
-
-    return stats;
   }
 
   private async sendOneSignal(

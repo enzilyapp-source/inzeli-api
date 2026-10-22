@@ -4,11 +4,14 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { rateLimitMiddleware } from './common/rate-limit.middleware';
+import { static as serveStatic } from 'express';
+import { ensureUploadsRoot } from './common/uploads';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const express = app.getHttpAdapter().getInstance();
   express.set('trust proxy', 1);
+  app.use('/uploads', serveStatic(ensureUploadsRoot()));
   const corsOrigins = (process.env.CORS_ORIGINS ?? '')
     .split(',')
     .map((origin) => origin.trim())

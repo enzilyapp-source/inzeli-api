@@ -1,4 +1,5 @@
 // src/users/users.module.ts
+import { MonthlyAwardsService } from './monthly_awards.service';
 import { Module } from '@nestjs/common';
 import { UsersController } from './users.controller';
 import { AdminUsersController } from './users_admin.controller';
@@ -12,6 +13,6 @@ import { SeasonResetService } from './season_reset.service';
     AdminUsersController,
     AdminUsersNotificationsController,
   ],
-  providers: [PrismaService, SeasonResetService],
+  providers: [PrismaService, SeasonResetService, MonthlyAwardsService],
 })
 export class UsersModule {}

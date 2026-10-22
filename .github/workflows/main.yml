@@ -1,9 +1,17 @@
-name: Deploy Prisma to Neon
+name: Apply reviewed Prisma migrations to Neon
 
 on:
   push:
     branches:
       - main
+
+# Serialize database jobs so two pushes cannot migrate Neon concurrently.
+concurrency:
+  group: neon-production-migrations
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   prisma:
@@ -24,8 +32,18 @@ jobs:
       - name: Prisma generate
         run: npx prisma generate
 
-      # 👇 هذا الخيار يشتغل حتى لو ما عندك migrations
-      - name: Prisma db push (Neon)
-        run: npx prisma db push
+      - name: Build and test before database changes
+        run: |
+          npm run build
+          npm test -- --runInBand
+
+      # Apply versioned SQL only; never infer destructive changes from the schema.
+      - name: Apply reviewed migrations
+        run: npx prisma migrate deploy
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }} 
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Verify deployed schema
+        run: npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

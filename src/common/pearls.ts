@@ -19,7 +19,7 @@ const DEFAULT_GAMES = [
   'دامه',
   'كيرم',
   'دومنه',
-  'طاولة',
+  'طاوله',
   'جاكارو',
   'بيبيفوت',
   'قدم',
@@ -28,7 +28,7 @@ const DEFAULT_GAMES = [
   'بولنج',
   'بادل',
   'تنس طاولة',
-  'تنس أرضي',
+  'تنس ارضي',
   'بلياردو',
 ];
 
@@ -46,6 +46,21 @@ export function isBadgeLossBufferEnabled(): boolean {
     ].find((value) => value?.trim()) ?? '';
   const value = raw.trim().toLowerCase();
   return ['1', 'true', 'yes', 'on', 'buffered'].includes(value);
+}
+
+// A wallet can reset on the first read of a new month, before the scheduled job.
+// Persist its final old balance first so leaderboard awards remain reconstructible.
+async function archiveSeasonWallet(tx: TxLike, data: {
+  userId: string; gameId: string; seasonYm: number; pearls: number;
+  scope: 'GENERAL' | 'SPONSOR' | 'DEWANYAH'; sponsorCode?: string; dewanyahId?: string;
+}) {
+  if (!data.seasonYm || data.seasonYm >= seasonYm()) return;
+  const dedupeKey = `wallet-archive:${data.seasonYm}:${data.scope}:${data.sponsorCode ?? data.dewanyahId ?? ''}:${data.gameId}:${data.userId}`;
+  await tx.timelineEvent.upsert({ where: { dedupeKey }, update: {}, create: {
+    dedupeKey, userId: data.userId, gameId: data.gameId, kind: 'SEASON_WALLET_ARCHIVE',
+    meta: { seasonYm: data.seasonYm, scope: data.scope, pearls: data.pearls,
+      sponsorCode: data.sponsorCode ?? null, dewanyahId: data.dewanyahId ?? null },
+  } });
 }
 
 // ---------- helpers ----------
@@ -99,6 +114,7 @@ async function ensureUserGameWallet(
 
   const currentYm = (w?.seasonYm ?? 0) as number;
   if (currentYm !== nowYm) {
+    await archiveSeasonWallet(tx, { userId, gameId, seasonYm: currentYm, pearls: w.pearls, scope: 'GENERAL' });
     const updated = await client.userGameWallet.update({
       where: { userId_gameId: { userId, gameId } },
       data: {
@@ -315,6 +331,7 @@ export async function getSponsorPearls(
 
   const currentYm = (w?.seasonYm ?? 0) as number;
   if (currentYm !== nowYm) {
+    await archiveSeasonWallet(tx, { userId, gameId, seasonYm: currentYm, pearls: w.pearls, scope: 'SPONSOR', sponsorCode });
     const updated = await client.sponsorGameWallet.update({
       where: { userId_sponsorCode_gameId: { userId, sponsorCode, gameId } },
       data: {
@@ -488,6 +505,7 @@ export async function getDewanyahPearls(
 
   const currentYm = (w?.seasonYm ?? 0) as number;
   if (currentYm !== nowYm) {
+    await archiveSeasonWallet(tx, { userId, gameId, seasonYm: currentYm, pearls: w.pearls, scope: 'DEWANYAH', dewanyahId });
     const updated = await client.dewanyahGameWallet.update({
       where: { userId_dewanyahId_gameId: { userId, dewanyahId, gameId } },
       data: {

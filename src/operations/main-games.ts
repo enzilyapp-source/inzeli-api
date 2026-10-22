@@ -1,0 +1,26 @@
+// IDs must match AppState.games in the Flutter app. Legacy spelling aliases remain
+// in the database for history, but are not independent main-game switches.
+export const MAIN_GAME_IDS = [
+  'كوت',
+  'بلوت',
+  'تريكس',
+  'هند',
+  'سبيتة',
+  'اونو',
+  'دفان',
+  'شطرنج',
+  'دامه',
+  'كيرم',
+  'دومنه',
+  'طاوله',
+  'جاكارو',
+  'بلياردو',
+  'بيبيفوت',
+  'قدم',
+  'سله',
+  'طائره',
+  'بولنج',
+  'بادل',
+  'تنس طاولة',
+  'تنس ارضي',
+];

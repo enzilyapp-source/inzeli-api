@@ -7,7 +7,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model AppSettings {
+  id String @id @default("main")
+  maintenanceEnabled Boolean @default(false)
+  maintenanceMessage String @default("التطبيق تحت الصيانة، بنرجع لكم قريبًا")
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
 model Game {
+  mainVisible Boolean @default(true)
   id                 String               @id
   name               String
   category           String
@@ -23,7 +31,22 @@ model Game {
   UserGameWallet     UserGameWallet[]
 }
 
+model VipPurchase {
+  id String @id @default(uuid())
+  userId String?
+  isTestAccount Boolean @default(false)
+  creditsCharged Int
+  startsAt DateTime
+  endsAt DateTime
+  createdAt DateTime @default(now())
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([createdAt])
+  @@index([userId])
+}
+
 model User {
+  username String? @unique
+  vipPurchases VipPurchase[]
   id                  String               @id @default(uuid())
   publicId            String               @unique @default(cuid())
   email               String               @unique
@@ -269,6 +292,8 @@ model Match {
   room        Room?              @relation(fields: [roomCode], references: [code])
   sponsor     Sponsor?           @relation("SponsorMatches", fields: [sponsorCode], references: [code])
   parts       MatchParticipant[]
+
+  @@index([createdAt])
 }
 
 model MatchParticipant {
@@ -282,6 +307,7 @@ model MatchParticipant {
 }
 
 model TimelineEvent {
+  dedupeKey String? @unique
   id        String   @id @default(uuid())
   userId    String?
   roomCode  String?
@@ -292,6 +318,8 @@ model TimelineEvent {
   game      Game?    @relation(fields: [gameId], references: [id])
   room      Room?    @relation(fields: [roomCode], references: [code])
   user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([kind, createdAt])
 }
 
 model SponsorGame {
@@ -463,6 +491,7 @@ model DewanyahRequest {
 }
 
 model MonthlyLeaderboardSnapshot {
+  rank Int @default(1)
   id           String     @id @default(cuid())
   scope        BadgeScope
   seasonYm     Int
