@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { rateLimitMiddleware } from './common/rate-limit.middleware';
 import { static as serveStatic } from 'express';
+import { configureBodyParsing } from './common/body-parsing';
 import { ensureUploadsRoot } from './common/uploads';
 
 async function bootstrap() {
@@ -12,6 +13,8 @@ async function bootstrap() {
   const express = app.getHttpAdapter().getInstance();
   express.set('trust proxy', 1);
   app.use('/uploads', serveStatic(ensureUploadsRoot()));
+  // Bound companion ledgers without raising body limits on unrelated endpoints.
+  configureBodyParsing(app);
   const corsOrigins = (process.env.CORS_ORIGINS ?? '')
     .split(',')
     .map((origin) => origin.trim())

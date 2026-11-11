@@ -187,6 +187,7 @@ model UserBadgeAward {
 }
 
 model Room {
+  scoreSheet        RoomScoreSheet?
   code              String           @id
   gameId            String
   hostUserId        String
@@ -543,4 +544,13 @@ enum RoomResultStatus {
 enum Outcome {
   WIN
   LOSS
+}
+
+// Optional score ledger. Separate from resultPayload, voting, stakes and pearls.
+model RoomScoreSheet {
+  roomCode  String   @id
+  revision  Int      @default(1)
+  snapshot  Json
+  updatedAt DateTime @default(now()) @updatedAt
+  room      Room     @relation(fields: [roomCode], references: [code], onDelete: Cascade)
 }

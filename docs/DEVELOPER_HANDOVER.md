@@ -214,3 +214,11 @@ flutter build ios --release --no-codesign
 كان `0009_user_vip_until` مسجلًا كفاشل قديمًا بسبب استخدام `datetime` غير المدعوم في PostgreSQL، بينما `vipUntil` موجود بالفعل بالنوع الصحيح. كذلك كانت بنية 0010 و0011 موجودة دون سجل ترحيل مكتمل. بعد مقارنة المخطط، استُخدم `prisma migrate resolve --applied` لهذه الترحيلات ولملفي الإضافة المطبقين؛ لم يُعَد تشغيل UPDATE الخاص بتعبئة badgeScore القديم، للحفاظ على الأرصدة الحالية. نجح `prisma migrate deploy` دون أي ترحيل معلّق وأظهر فحص Prisma عدم وجود فرق بين Neon والمخطط الحالي.
 
 عُدل `inzeli-api/.github/workflows/main.yml` لاستخدام `prisma migrate deploy` ثم فحص التطابق، بدل `prisma db push`. تُسلسل مهام القاعدة وتسبقها عملية بناء واختبار. تحديث هذه الجولة طُبق قبل البوش حتى تكون القاعدة متوافقة مع السيرفر القديم والجديد خلال النشر.
+
+## Shared score sheets — 11 November 2026
+
+The room score-sheet GET/PUT and roster endpoints use JWT, room membership, host-only writes and optimistic revisions. Score sheets are independent of financial results and pearls. The explicit normal JSON parser preserves login while the score endpoint accepts larger bodies.
+
+Migration 20261108000000_room_score_sheet was applied to Neon and recorded in Prisma after fully restoring backup inzeli_neon_backup_20261111T111036.dump to an isolated local database. Testing preserved fingerprints of all 31 existing tables (33,396 rows). The migration only creates a new table, in a transaction with a three-second lock timeout. Production schema comparison passed. Backups and verification reports remain outside Git.
+
+Nest build and all 8 tests passed before push. scripts/check-score-sheet-db.cjs checks table readiness without listing player data. Application integration and release details are in inzeli_mvp/SCOREKEEPER_HANDOVER.md. Backend deployment is required in addition to the database migration.

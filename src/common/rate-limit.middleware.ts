@@ -47,6 +47,9 @@ function clientIp(req: Request): string {
 
 function bucketPath(req: Request): string {
   const path = req.originalUrl.split('?')[0];
+  // Companion score polling must not consume the room refresh/result-vote bucket.
+  const scoreSheet = /^\/api\/rooms\/([^/]+)\/score-sheet(?:\/roster)?$/.exec(path);
+  if (scoreSheet) return `/api/score-sheet/${scoreSheet[1]}`;
   if (path.startsWith('/api/auth/')) return '/api/auth';
   if (path.startsWith('/api/rooms')) return '/api/rooms';
   if (path.startsWith('/api/admin/')) return '/api/admin';
