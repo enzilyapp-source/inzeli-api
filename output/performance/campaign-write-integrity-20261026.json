@@ -1,0 +1,303 @@
+{
+  "productionTouched": false,
+  "startedAt": "2026-10-26T16:13:53.396Z",
+  "rooms": [
+    {
+      "code": "LOAD0000",
+      "scenario": "simultaneous-approvals",
+      "matchCount": 2,
+      "participantCounts": [
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    },
+    {
+      "code": "LOAD0001",
+      "scenario": "simultaneous-approvals",
+      "matchCount": 2,
+      "participantCounts": [
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    },
+    {
+      "code": "LOAD0002",
+      "scenario": "simultaneous-approvals",
+      "matchCount": 2,
+      "participantCounts": [
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    },
+    {
+      "code": "LOAD0003",
+      "scenario": "simultaneous-approvals",
+      "matchCount": 2,
+      "participantCounts": [
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    },
+    {
+      "code": "LOAD0004",
+      "scenario": "simultaneous-approvals",
+      "matchCount": 2,
+      "participantCounts": [
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    },
+    {
+      "code": "LOAD0005",
+      "scenario": "simultaneous-approvals-with-retry",
+      "matchCount": 3,
+      "participantCounts": [
+        4,
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    },
+    {
+      "code": "LOAD0006",
+      "scenario": "simultaneous-approvals-with-retry",
+      "matchCount": 3,
+      "participantCounts": [
+        4,
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    },
+    {
+      "code": "LOAD0007",
+      "scenario": "simultaneous-approvals-with-retry",
+      "matchCount": 3,
+      "participantCounts": [
+        4,
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    },
+    {
+      "code": "LOAD0008",
+      "scenario": "simultaneous-approvals-with-retry",
+      "matchCount": 3,
+      "participantCounts": [
+        4,
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    },
+    {
+      "code": "LOAD0009",
+      "scenario": "simultaneous-approvals-with-retry",
+      "matchCount": 3,
+      "participantCounts": [
+        4,
+        4,
+        4
+      ],
+      "correctScores": false,
+      "finished": true,
+      "votes": [
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        },
+        {
+          "ok": true,
+          "status": 201
+        }
+      ],
+      "pass": false
+    }
+  ],
+  "passed": 0,
+  "failed": 10,
+  "registrationBurst": {
+    "concurrentRequests": 100,
+    "succeeded": 100,
+    "p95Ms": 1713,
+    "errors": [],
+    "createdSyntheticAccounts": 100,
+    "externalOtpSent": false,
+    "note": "Synthetic allowlisted account bypass; real delivery provider is NOT load-tested"
+  },
+  "finishedAt": "2026-10-26T16:13:55.656Z"
+}

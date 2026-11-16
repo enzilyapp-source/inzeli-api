@@ -1,0 +1,282 @@
+{
+  "startedAt": "2026-10-26T16:09:44.712Z",
+  "productionTouched": false,
+  "limitations": [
+    "Local machine, not Render/Neon performance certification",
+    "No mobile UI or real OTP/Push provider load",
+    "No CPU cgroup limit; Node heap capped at 1 GB",
+    "Session refresh exercises existing users; new registration surge needs separate validation",
+    "Short synthetic stages; not a long-duration soak test"
+  ],
+  "host": {
+    "platform": "darwin",
+    "cpuCount": 10,
+    "cpu": "Apple M4",
+    "totalMemoryGb": 24,
+    "node": "v24.11.0"
+  },
+  "database": {
+    "host": "127.0.0.1",
+    "name": "enzily_campaign_20261026_test",
+    "connectionsPerPrismaClient": "3"
+  },
+  "stages": [
+    {
+      "virtualUsers": 100,
+      "offeredDurationSeconds": 60,
+      "actualElapsedSeconds": 60,
+      "scheduledRoomCycles": 2000,
+      "peakInflightCycles": 4,
+      "server": {
+        "rssMb": 275,
+        "cpuOneCorePercent": 27,
+        "eventLoopP99Ms": 23
+      },
+      "endpoints": {
+        "settings": {
+          "requests": 200,
+          "success": 200,
+          "errors": {},
+          "p50Ms": 1,
+          "p95Ms": 2,
+          "p99Ms": 4,
+          "successfulP95Ms": 2
+        },
+        "inbox": {
+          "requests": 200,
+          "success": 200,
+          "errors": {},
+          "p50Ms": 1,
+          "p95Ms": 4,
+          "p99Ms": 6,
+          "successfulP95Ms": 4
+        },
+        "room": {
+          "requests": 2000,
+          "success": 2000,
+          "errors": {},
+          "p50Ms": 5,
+          "p95Ms": 7,
+          "p99Ms": 8,
+          "successfulP95Ms": 7
+        },
+        "roomState": {
+          "requests": 2000,
+          "success": 2000,
+          "errors": {},
+          "p50Ms": 1,
+          "p95Ms": 2,
+          "p99Ms": 2,
+          "successfulP95Ms": 2
+        },
+        "leaderboard": {
+          "requests": 40,
+          "success": 40,
+          "errors": {},
+          "p50Ms": 68,
+          "p95Ms": 73,
+          "p99Ms": 78,
+          "successfulP95Ms": 73
+        },
+        "sessionRefresh": {
+          "requests": 100,
+          "success": 100,
+          "errors": {},
+          "p50Ms": 32,
+          "p95Ms": 35,
+          "p99Ms": 37,
+          "successfulP95Ms": 35
+        }
+      }
+    },
+    {
+      "virtualUsers": 250,
+      "offeredDurationSeconds": 60,
+      "actualElapsedSeconds": 60,
+      "scheduledRoomCycles": 5000,
+      "peakInflightCycles": 8,
+      "server": {
+        "rssMb": 280,
+        "cpuOneCorePercent": 42,
+        "eventLoopP99Ms": 22
+      },
+      "endpoints": {
+        "room": {
+          "requests": 5000,
+          "success": 5000,
+          "errors": {},
+          "p50Ms": 3,
+          "p95Ms": 3,
+          "p99Ms": 4,
+          "successfulP95Ms": 3
+        },
+        "settings": {
+          "requests": 500,
+          "success": 500,
+          "errors": {},
+          "p50Ms": 1,
+          "p95Ms": 2,
+          "p99Ms": 6,
+          "successfulP95Ms": 2
+        },
+        "roomState": {
+          "requests": 5000,
+          "success": 5000,
+          "errors": {},
+          "p50Ms": 1,
+          "p95Ms": 1,
+          "p99Ms": 1,
+          "successfulP95Ms": 1
+        },
+        "inbox": {
+          "requests": 500,
+          "success": 500,
+          "errors": {},
+          "p50Ms": 1,
+          "p95Ms": 4,
+          "p99Ms": 6,
+          "successfulP95Ms": 4
+        },
+        "sessionRefresh": {
+          "requests": 250,
+          "success": 250,
+          "errors": {},
+          "p50Ms": 21,
+          "p95Ms": 27,
+          "p99Ms": 33,
+          "successfulP95Ms": 27
+        },
+        "leaderboard": {
+          "requests": 100,
+          "success": 100,
+          "errors": {},
+          "p50Ms": 49,
+          "p95Ms": 53,
+          "p99Ms": 59,
+          "successfulP95Ms": 53
+        }
+      }
+    },
+    {
+      "virtualUsers": 500,
+      "offeredDurationSeconds": 60,
+      "actualElapsedSeconds": 60,
+      "scheduledRoomCycles": 10000,
+      "peakInflightCycles": 11,
+      "server": {
+        "rssMb": 290,
+        "cpuOneCorePercent": 72,
+        "eventLoopP99Ms": 21
+      },
+      "endpoints": {
+        "room": {
+          "requests": 10000,
+          "success": 10000,
+          "errors": {},
+          "p50Ms": 2,
+          "p95Ms": 2,
+          "p99Ms": 4,
+          "successfulP95Ms": 2
+        },
+        "settings": {
+          "requests": 1000,
+          "success": 1000,
+          "errors": {},
+          "p50Ms": 1,
+          "p95Ms": 3,
+          "p99Ms": 5,
+          "successfulP95Ms": 3
+        },
+        "inbox": {
+          "requests": 1000,
+          "success": 1000,
+          "errors": {},
+          "p50Ms": 1,
+          "p95Ms": 4,
+          "p99Ms": 7,
+          "successfulP95Ms": 4
+        },
+        "roomState": {
+          "requests": 10000,
+          "success": 10000,
+          "errors": {},
+          "p50Ms": 1,
+          "p95Ms": 1,
+          "p99Ms": 1,
+          "successfulP95Ms": 1
+        },
+        "leaderboard": {
+          "requests": 200,
+          "success": 200,
+          "errors": {},
+          "p50Ms": 49,
+          "p95Ms": 53,
+          "p99Ms": 59,
+          "successfulP95Ms": 53
+        },
+        "sessionRefresh": {
+          "requests": 500,
+          "success": 500,
+          "errors": {},
+          "p50Ms": 23,
+          "p95Ms": 33,
+          "p99Ms": 51,
+          "successfulP95Ms": 33
+        }
+      }
+    }
+  ],
+  "fixtures": {
+    "users": 500,
+    "rooms": 125,
+    "matches": 3000,
+    "participants": 12000,
+    "events": 25000,
+    "gameWallets": 11000
+  },
+  "sharedWifi": {
+    "players": 5,
+    "requests": 200,
+    "rejected429": 20,
+    "failuresOther": 0,
+    "note": "One-minute request volume compressed into sequential requests inside the same limiter window"
+  },
+  "syntheticReadIntegrity": {
+    "before": [
+      {
+        "kind": "players",
+        "count": 500,
+        "hash": "2919b7f3c9a1e4ee7174e748a8d676c3"
+      },
+      {
+        "kind": "rooms",
+        "count": 125,
+        "hash": "5fd59fe35f42db0d8c538cf696e2a598"
+      },
+      {
+        "kind": "users",
+        "count": 500,
+        "hash": "aa024b44f84309bdf6011b120543c1f6"
+      }
+    ],
+    "after": [
+      {
+        "kind": "players",
+        "count": 500,
+        "hash": "2919b7f3c9a1e4ee7174e748a8d676c3"
+      },
+      {
+        "kind": "rooms",
+        "count": 125,
+        "hash": "5fd59fe35f42db0d8c538cf696e2a598"
+      },
+      {
+        "kind": "users",
+        "count": 500,
+        "hash": "aa024b44f84309bdf6011b120543c1f6"
+      }
+    ],
+    "unchanged": true
+  },
+  "finishedAt": "2026-10-26T16:12:52.320Z"
+}
