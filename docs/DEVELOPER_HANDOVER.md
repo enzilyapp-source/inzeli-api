@@ -222,3 +222,9 @@ The room score-sheet GET/PUT and roster endpoints use JWT, room membership, host
 Migration 20261108000000_room_score_sheet was applied to Neon and recorded in Prisma after fully restoring backup inzeli_neon_backup_20261111T111036.dump to an isolated local database. Testing preserved fingerprints of all 31 existing tables (33,396 rows). The migration only creates a new table, in a transaction with a three-second lock timeout. Production schema comparison passed. Backups and verification reports remain outside Git.
 
 Nest build and all 8 tests passed before push. scripts/check-score-sheet-db.cjs checks table readiness without listing player data. Application integration and release details are in inzeli_mvp/SCOREKEEPER_HANDOVER.md. Backend deployment is required in addition to the database migration.
+
+## Admin global user totals — 18 November 2026
+
+GET /api/admin/users/summary is protected by the existing JWT and AdminGuard. A single user.groupBy query counts all current accounts, returning totalAccounts, registeredUsers (non-test), and testAccounts. It does not load user details or apply search/list limits or leaderboard visibility filters. No schema migration is required. The existing GET /admin/users list remains a compatible array response with its normal limit.
+
+The admin Users tab displays these totals independently of its 200-row list. Search refreshes the count without filtering it; the count also has a dedicated refresh/retry control. A failed request displays an error rather than a misleading zero. Deploy the API before the admin frontend. Backend HTTP tests cover counts above the display limit, empty/test-only datasets, and rejection of unauthenticated/non-admin requests.

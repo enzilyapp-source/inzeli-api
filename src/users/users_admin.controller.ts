@@ -44,6 +44,28 @@ export class AdminUsersController {
     return user;
   }
 
+  // A single aggregate covers every account, independently of the list's
+  // search filter / display limit. No user records or private fields are loaded.
+  @UseGuards(AuthGuard('jwt'), AdminGuard)
+  @Get('summary')
+  async summary() {
+    const groups = await this.prisma.user.groupBy({
+      by: ['isTestAccount'],
+      _count: { _all: true },
+    });
+    let totalAccounts = 0;
+    let testAccounts = 0;
+    for (const group of groups) {
+      totalAccounts += group._count._all;
+      if (group.isTestAccount) testAccounts += group._count._all;
+    }
+    return ok('User totals', {
+      totalAccounts,
+      registeredUsers: totalAccounts - testAccounts,
+      testAccounts,
+    });
+  }
+
   @UseGuards(AuthGuard('jwt'), AdminGuard)
   @Get()
   async list(@Query('q') q?: string, @Query('limit') limit?: string) {
