@@ -26,6 +26,16 @@ export class StoreController {
   }
 
   @UseGuards(AuthGuard('jwt'))
+  @Get('challenges')
+  async challenges(@Req() req: any) {
+    try {
+      return ok('Permanent challenge rewards', await this.store.challenges(req.user.userId));
+    } catch (e: any) {
+      return err(e?.message || 'Failed to load challenges', e?.message);
+    }
+  }
+
+  @UseGuards(AuthGuard('jwt'))
   @Get('me')
   async myItems(@Req() req: any) {
     try {

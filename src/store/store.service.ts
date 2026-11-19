@@ -1,3 +1,4 @@
+import { assertChallengeRewardAccess, challengeRewardsSnapshot, isChallengeReward } from './challenge-rewards';
 // src/store/store.service.ts
 import {
   Injectable,
@@ -65,7 +66,12 @@ export class StoreService {
     ];
   }
 
+  async challenges(userId: string) {
+    return challengeRewardsSnapshot(this.prisma, userId);
+  }
+
   async myItems(userId: string) {
+    await this.challenges(userId);
     return this.prisma.userItem.findMany({
       where: { userId },
       include: { item: true },
@@ -74,6 +80,7 @@ export class StoreService {
   }
 
   async buy(userId: string, itemId: string) {
+    if (isChallengeReward(itemId)) throw new BadRequestException('REWARD_EARNED_ONLY');
     if (itemId === StoreService.VIP_MONTHLY_ITEM_ID) {
       const days = this.vipMonthlyDays();
       const price = this.vipMonthlyPrice();
@@ -173,8 +180,9 @@ export class StoreService {
     });
     if (!user) throw new NotFoundException('USER_NOT_FOUND');
 
-    const checkAccess = async (itemId: string | null | undefined) => {
+    const checkAccess = async (itemId: string | null | undefined, kind: 'theme' | 'frame' | 'card') => {
       if (!itemId) return false;
+      if (isChallengeReward(itemId)) await assertChallengeRewardAccess(this.prisma, userId, itemId, kind);
       if (
         StoreService.VIP_THEME_IDS.has(itemId) &&
         this.hasActiveVip(user.vipUntil)
@@ -190,17 +198,17 @@ export class StoreService {
 
     if (data.themeId !== undefined) {
       if (data.themeId === null || data.themeId === '') updates.themeId = null;
-      else if (await checkAccess(data.themeId))
+      else if (await checkAccess(data.themeId, 'theme'))
         updates.themeId = data.themeId;
     }
     if (data.frameId !== undefined) {
       if (data.frameId === null || data.frameId === '') updates.frameId = null;
-      else if (await checkAccess(data.frameId))
+      else if (await checkAccess(data.frameId, 'frame'))
         updates.frameId = data.frameId;
     }
     if (data.cardId !== undefined) {
       if (data.cardId === null || data.cardId === '') updates.cardId = null;
-      else if (await checkAccess(data.cardId)) updates.cardId = data.cardId;
+      else if (await checkAccess(data.cardId, 'card')) updates.cardId = data.cardId;
     }
 
     const updatedUser = await this.prisma.user.update({

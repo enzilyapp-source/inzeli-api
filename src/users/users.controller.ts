@@ -1,3 +1,4 @@
+import { assertChallengeRewardAccess } from '../store/challenge-rewards';
 import { normalizeUsername, usernameWriteError } from '../common/username';
 // src/users/users.controller.ts
 import {
@@ -156,14 +157,17 @@ export class UsersController {
 
       if (body && Object.prototype.hasOwnProperty.call(body, 'themeId')) {
         const v = cleanNullable(body.themeId);
+        if (v) await assertChallengeRewardAccess(this.prisma, userId, v, 'theme');
         updates.themeId = v ?? null;
       }
       if (body && Object.prototype.hasOwnProperty.call(body, 'frameId')) {
         const v = cleanNullable(body.frameId);
+        if (v) await assertChallengeRewardAccess(this.prisma, userId, v, 'frame');
         updates.frameId = v ?? null;
       }
       if (body && Object.prototype.hasOwnProperty.call(body, 'cardId')) {
         const v = cleanNullable(body.cardId);
+        if (v) await assertChallengeRewardAccess(this.prisma, userId, v, 'card');
         updates.cardId = v ?? null;
       }
 

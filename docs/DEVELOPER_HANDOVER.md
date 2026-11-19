@@ -228,3 +228,19 @@ Nest build and all 8 tests passed before push. scripts/check-score-sheet-db.cjs 
 GET /api/admin/users/summary is protected by the existing JWT and AdminGuard. A single user.groupBy query counts all current accounts, returning totalAccounts, registeredUsers (non-test), and testAccounts. It does not load user details or apply search/list limits or leaderboard visibility filters. No schema migration is required. The existing GET /admin/users list remains a compatible array response with its normal limit.
 
 The admin Users tab displays these totals independently of its 200-row list. Search refreshes the count without filtering it; the count also has a dedicated refresh/retry control. A failed request displays an error rather than a misleading zero. Deploy the API before the admin frontend. Backend HTTP tests cover counts above the display limit, empty/test-only datasets, and rejection of unauthenticated/non-admin requests.
+
+## Permanent challenge frames — 19 November 2026
+
+`GET /api/store/challenges` uses the caller's JWT identity to calculate rank/game rewards from saved UserBadge milestones and grouped MatchParticipant outcomes. `src/store/challenge-rewards.ts` owns the stable reward IDs, thresholds, game groups and sprite slots. No client-supplied wins, thresholds or claimed user IDs are accepted. Badge rows for games without a recorded match do not qualify.
+
+Eligible rewards are granted in a transaction using the existing StoreItem and UserItem tables with createMany/skipDuplicates. A first grant creates inactive, non-purchasable theme entries; later requests reuse ownership without rewrites. Concurrent devices cannot duplicate an inventory item. Existing historical matches qualify. Earned ownership survives lower current scores, missing old progress and monthly season resets, and is returned by `/store/me` for a fresh device. No currency is debited and no migration or production backfill script is needed.
+
+`POST /store/apply` verifies inventory ownership; `PATCH /users/me` also verifies all new reward IDs, leaving legacy cosmetics compatible. Reward purchase routes explicitly reject reward IDs. Deploy this API before the new app. No match settlement, room handling, season-reset code or financial rules were changed. Tests in `src/store/challenge-rewards.spec.ts` cover tiers, no-match accounts, win groups, durable/account-scoped inventory, repeat claims and rejected selection/purchase.
+
+
+The heritage collection adds 12 permanent win challenges, bringing the catalog to 27. Slots 0–14 retain their original IDs/art; 15–26 select the separate 4×3 heritage sprite sheet in the client. The snapshot includes `collection: classic|heritage` (older cached snapshots default to classic). Heritage rules and grouping are in the same server catalog; eligibility, bulk grants, purchase rejection and seasonal persistence share the existing tested flow. No schema changes are needed.
+
+
+### Paired rank identities and profile banners
+
+The approved order is عليمي/bronze (5), زين/silver (10), محترف/gold (15), أسطوري/diamond (20), أحسن واحد/crown (30). Five new reward_tier_* frame IDs and five reward_banner_* banner IDs preserve all previously awarded IDs/artwork. Beginner frame/banner are starter entitlements; later pairs use saved badge history from played games. Banners are existing StoreKind.card items and persist through season resets alongside frames. Snapshot itemKind distinguishes card/theme and legacyRank lets the client keep old cosmetics out of the new tier guide. Store apply and profile PATCH validate both ownership and item kind. Frame and banner changes are accepted together in the profile update; no schema/migration or changes to match settlement are required. The catalog now contains 37 permanent entitlements (32 frames, 5 banners).
